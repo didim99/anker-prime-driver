@@ -7,6 +7,7 @@ from ankerprime import __version__
 
 def main(argv: list[str] | None = None) -> int:
     """Run the command-line interface and return the process exit code."""
+
     parser = argparse.ArgumentParser(
         prog='ankerprime',
         description='Monitor and control Anker Prime chargers.')

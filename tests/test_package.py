@@ -10,8 +10,8 @@ from ankerprime.cli.main import main
 
 
 SUBPACKAGES = [
-    'api', 'cli', 'cloud', 'device', 'model', 'protocol', 'protocol.a2345',
-    'protocol.a2687', 'session', 'storage', 'transport',
+    'api', 'cli', 'cloud', 'device', 'interfaces', 'model', 'protocol',
+    'protocol.a2345', 'protocol.a2687', 'session', 'storage', 'transport',
 ]
 
 
