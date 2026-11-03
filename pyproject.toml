@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anker-prime-driver"
+version = "0.1.0.dev0"
+description = "Monitoring and control library for Anker Prime chargers"
+readme = "readme.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "didim99" }]
+keywords = ["anker", "anker-prime", "charger", "home-assistant", "mqtt", "ble"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Typing :: Typed",
+]
+
+# Lower bounds only: the library must coexist with Home Assistant's own pins.
+dependencies = [
+    "aiohttp>=3.9",
+    "aiomqtt>=2.3",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+ble = [
+    "bleak>=0.22",
+    "bleak-retry-connector>=3.5",
+]
+
+[project.scripts]
+ankerprime = "ankerprime.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/didim99/anker-prime-driver"
+Issues = "https://github.com/didim99/anker-prime-driver/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ankerprime = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 85
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "B",   # bugbear
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade (3.11 syntax)
+    "W",   # pycodestyle warnings
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["ankerprime"]
+lines-after-imports = 2
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
