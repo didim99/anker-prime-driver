@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ankerprime.cloud.client import MqttCredentials
 from ankerprime.storage.files import write_private_file
+from ankerprime.model.errors import ProtocolError
 
 
 CERTIFICATE_FILE = 'mqtt-certificate.pem'
@@ -47,13 +48,17 @@ def load_tls_context(credentials: MqttCredentials,
     """Build the TLS context and remove the identity files right after.
 
     The context keeps the identity in memory, so the files only exist while
-    it loads. Without a directory a private temporary one is used.
+    it loads. Without a directory a private temporary one is used. An
+    identity ``ssl`` cannot load raises ``ProtocolError``.
     """
 
-    if directory is None:
-        with tempfile.TemporaryDirectory(prefix='ankerprime-') as temporary:
-            return _load_and_remove(credentials, Path(temporary))
-    return _load_and_remove(credentials, directory)
+    try:
+        if directory is None:
+            with tempfile.TemporaryDirectory(prefix='ankerprime-') as temporary:
+                return _load_and_remove(credentials, Path(temporary))
+        return _load_and_remove(credentials, directory)
+    except ssl.SSLError as error:
+        raise ProtocolError(f'unusable MQTT client identity: {error}') from error
 
 
 def _load_and_remove(credentials: MqttCredentials,

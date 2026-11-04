@@ -420,6 +420,9 @@ class A2345Device(BaseCharger, ChannelListener):
                 except AnkerPrimeError as error:
                     logger.debug('reconnecting %s failed: %s',
                                  redact(self._info.serial), error)
+                except Exception:
+                    logger.exception('unexpected error reconnecting %s',
+                                     redact(self._info.serial))
 
     async def _close_link(self) -> None:
         maintenance = self._maintenance

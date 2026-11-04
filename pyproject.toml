@@ -73,6 +73,8 @@ select = [
     "UP",  # pyupgrade (3.11 syntax)
     "W",   # pycodestyle warnings
 ]
+# Override-me stubs with an explicit `pass` are part of the codestyle.
+ignore = ["B027"]
 
 [tool.mypy]
 python_version = "3.11"

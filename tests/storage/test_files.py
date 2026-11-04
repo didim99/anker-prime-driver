@@ -14,7 +14,8 @@ from cryptography.hazmat.primitives.serialization import (
 from cryptography.x509.oid import NameOID
 
 from ankerprime.cloud.credential_files import (
-    create_tls_context, remove_credential_files, write_credential_files)
+    create_tls_context, load_tls_context,
+    remove_credential_files, write_credential_files)
 from ankerprime.model import InvalidParameterError, ProtocolError
 from ankerprime.storage.files import write_private_file
 from ankerprime.storage.json_store import JsonFileStore
@@ -100,3 +101,13 @@ def test_tls_context_loads_generated_identity(tmp_path: Path) -> None:
     context = create_tls_context(*paths)
     assert context.minimum_version == ssl.TLSVersion.TLSv1_2
     assert context.verify_mode == ssl.CERT_REQUIRED
+
+
+def test_unloadable_identity_raises_protocol_error(tmp_path: Path) -> None:
+    credentials = make_mqtt_credentials(certificate_pem='CERT\n',
+                                        private_key_pem='KEY\n')
+    with pytest.raises(ProtocolError, match='unusable MQTT client identity'):
+        load_tls_context(credentials, tmp_path)
+    assert not list(tmp_path.iterdir())
+    with pytest.raises(ProtocolError):
+        load_tls_context(credentials)

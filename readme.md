@@ -2,8 +2,8 @@
 
 Python library to monitor and control Anker Prime chargers.
 
-> **Status: pre-alpha, under development.** Nothing below works yet beyond the
-> package skeleton.
+> **Status: pre-alpha, under development.** The 250W cloud connection and the
+> command-line tool work; the 160W and energy counters are not done yet.
 
 This is an unofficial project, not affiliated with or endorsed by Anker.
 
@@ -29,6 +29,40 @@ pip install anker-prime-driver[ble]     # plus Bluetooth (160W) support
 ```
 
 Requires Python 3.11 or later. The library is async-only (`asyncio`).
+
+## Command-line tool
+
+The package installs an `ankerprime` command (also `python -m ankerprime`).
+Sign in once; the login is stored in `~/.config/ankerprime` (or
+`%APPDATA%\ankerprime` on Windows), readable by your user only.
+
+```bash
+ankerprime regions                     # country codes Anker accepts
+ankerprime login you@example.com DE    # asks for the password
+ankerprime logout
+ankerprime devices                     # chargers bound to the account
+ankerprime status                      # full state once (--json for JSON)
+ankerprime monitor                     # live readings until Ctrl+C
+```
+
+Changing settings:
+
+```bash
+ankerprime output c1 off
+ankerprime countdown c2 1h30m          # or "cancel"
+ankerprime schedule c3 on 07:30 --days weekdays
+ankerprime mode port-priority
+ankerprime display --brightness 60 --screen-timeout 5min
+ankerprime clock on --theme style_2
+```
+
+With several chargers on the account, pick one with `--serial`. Run
+`ankerprime --help` or `ankerprime <command> --help` for every option.
+Commands marked experimental print a note: they follow the protocol but are
+not confirmed on a real charger yet.
+
+A second Anker account for this tool is recommended, so the login used by the
+Anker app stays untouched.
 
 ## Development
 

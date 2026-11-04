@@ -3,6 +3,7 @@
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from ankerprime.model.errors import ProtocolError
@@ -30,6 +31,12 @@ def parse_json_object(body: bytes) -> dict[str, Any]:
     if not isinstance(root, dict):
         raise ProtocolError('unexpected JSON from the Anker cloud')
     return root
+
+
+def enum_value(member: StrEnum | None) -> str | None:
+    """String value of an optional enum member."""
+
+    return member.value if member is not None else None
 
 
 def u32le(value: int) -> bytes:

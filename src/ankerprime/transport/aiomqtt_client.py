@@ -80,7 +80,7 @@ class AiomqttConnector(MqttConnector):
                                 timeout=self._timeout)
         try:
             await client.__aenter__()
-        except aiomqtt.MqttError as error:
+        except (aiomqtt.MqttError, OSError) as error:
             raise _connection_error('connect', error) from error
         return AiomqttConnection(client)
 

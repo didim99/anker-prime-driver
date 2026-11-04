@@ -12,10 +12,9 @@ from ankerprime.cloud.auth import AccountCredentials, Authentication
 from ankerprime.cloud.client import BoundDevice
 from ankerprime.cloud.regions import EU_SERVER
 from ankerprime.device.a2345 import A2345Timings
-from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
     AuthenticationError, OutputId, ProductCode, UnknownProductError)
-from tests.cloud.fakes import FakeHttpClient, Request, json_response
+from tests.cloud.fakes import FakeAnkerCloud, FakeHttpClient
 from tests.protocol.a2345.fixtures import STATUS_SNAPSHOT
 from tests.transport.fakes import FakeMqttConnector
 from tests.utils import no_tls, wait_until
@@ -23,68 +22,12 @@ from tests.utils import no_tls, wait_until
 
 NOW = datetime.fromtimestamp(1_900_000_000, UTC)
 CREDENTIALS = AccountCredentials('a@example.com', 'secret', 'JP')
-DEVICES = [
-    {'device_sn': 'SERIAL123', 'product_code': 'A2345',
-     'alias_name': 'Desk charger', 'device_sw_version': '2.1.1.6'},
-    {'device_sn': 'SERIAL456', 'product_code': 'A2687'},
-]
-MQTT_INFO = {
-    'user_id': 'u' * 40, 'app_name': 'anker_power', 'thing_name': 'thing',
-    'certificate_id': 'certificate', 'endpoint_addr': 'aiot-mqtt-eu.anker.com',
-    'certificate_pem': '-----BEGIN CERTIFICATE-----\nAQID\n'
-                       '-----END CERTIFICATE-----',
-    'private_key': '-----BEGIN PRIVATE KEY-----\nBAUG\n'
-                   '-----END PRIVATE KEY-----',
-}
 TIMINGS = A2345Timings(realtime_refresh=0.05, stale_after=0.5,
                        telemetry_deadline=2.0, readback_delay=0.02,
                        retry_initial=0.02, retry_max=0.05, tick=0.01)
 
 
-class CloudServer:
-    """Answers the Anker API; tokens can be revoked."""
-
-    _tokens: list[str]
-    _revoked: set[str]
-    _login_ok: bool
-
-    def __init__(self) -> None:
-        self._tokens = []
-        self._revoked = set()
-        self._login_ok = True
-
-    @property
-    def tokens(self) -> list[str]:
-        return self._tokens
-
-    def revoke(self, token: str) -> None:
-        self._revoked.add(token)
-
-    def set_login_ok(self, ok: bool) -> None:
-        self._login_ok = ok
-
-    def __call__(self, request: Request) -> HttpResponse:
-        if request.path == '/passport/login':
-            return self._login()
-        if request.headers.get('x-auth-token') in self._revoked:
-            return json_response({'code': 26084, 'msg': 'expired'})
-        if request.path.endswith('get_relate_and_bind_devices'):
-            return json_response({'code': 0, 'data': {'data': DEVICES}})
-        if request.path.endswith('get_user_mqtt_info'):
-            return json_response({'code': 0, 'data': MQTT_INFO})
-        return HttpResponse(404, b'')
-
-    def _login(self) -> HttpResponse:
-        if not self._login_ok:
-            return json_response({'code': 100053, 'msg': 'wrong password'})
-        token = f'token-{len(self._tokens) + 1}'
-        self._tokens.append(token)
-        return json_response({'code': 0, 'data': {
-            'user_id': 'u' * 40, 'auth_token': token,
-            'token_expires_at': 2_000_000_000}})
-
-
-async def make_account(server: CloudServer,
+async def make_account(server: FakeAnkerCloud,
                        connector: FakeMqttConnector | None = None,
                        keep_credentials: bool = True,
                        on_authentication: Callable[[Authentication], None]
@@ -98,7 +41,7 @@ async def make_account(server: CloudServer,
 
 
 async def test_login_and_device_listing() -> None:
-    server = CloudServer()
+    server = FakeAnkerCloud()
     account = await make_account(server)
     assert account.authentication.auth_token == 'token-1'
     assert account.authentication.server == EU_SERVER
@@ -107,7 +50,7 @@ async def test_login_and_device_listing() -> None:
 
 
 async def test_chargers_are_cloud_products_only_and_cached() -> None:
-    account = await make_account(CloudServer())
+    account = await make_account(FakeAnkerCloud())
     chargers = await account.chargers()
     assert len(chargers) == 1
     charger = chargers[0]
@@ -121,7 +64,7 @@ async def test_chargers_are_cloud_products_only_and_cached() -> None:
 
 
 async def test_rejected_token_triggers_one_relogin() -> None:
-    server = CloudServer()
+    server = FakeAnkerCloud()
     seen: list[Authentication] = []
     account = await make_account(server, on_authentication=seen.append)
     server.revoke('token-1')
@@ -132,7 +75,7 @@ async def test_rejected_token_triggers_one_relogin() -> None:
 
 
 async def test_without_credentials_rejection_reaches_caller() -> None:
-    server = CloudServer()
+    server = FakeAnkerCloud()
     account = await make_account(server, keep_credentials=False)
     server.revoke('token-1')
     with pytest.raises(AuthenticationError):
@@ -141,7 +84,7 @@ async def test_without_credentials_rejection_reaches_caller() -> None:
 
 
 async def test_failed_relogin_raises() -> None:
-    server = CloudServer()
+    server = FakeAnkerCloud()
     account = await make_account(server)
     server.revoke('token-1')
     server.set_login_ok(False)
@@ -150,7 +93,7 @@ async def test_failed_relogin_raises() -> None:
 
 
 async def test_charger_end_to_end_over_fake_mqtt() -> None:
-    server = CloudServer()
+    server = FakeAnkerCloud()
     connector = FakeMqttConnector()
     account = await make_account(server, connector)
     charger = (await account.chargers())[0]

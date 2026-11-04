@@ -49,14 +49,18 @@ def firmware_change(version: int = 2117) -> bytes:
     return charger_frame(0x0301, [(0xA2, value)])
 
 
-def charger_responder(status: int = 0) -> Responder:
-    """Answers reads with captured frames and writes with acks."""
+def charger_responder(status: int = 0,
+                      realtime_frames: int = 1) -> Responder:
+    """Answers reads with captured frames and writes with acks.
+
+    A realtime trigger is answered with ``realtime_frames`` telemetry frames.
+    """
 
     def respond(request: Frame) -> list[bytes]:
         if request.message_type == 0x0200:
             return [STATUS_SNAPSHOT]
         if request.message_type == 0x020B:
-            return [REALTIME_OLD_FIRMWARE]
+            return [REALTIME_OLD_FIRMWARE] * realtime_frames
         if request.message_type == 0x0202:
             return []
         return [ack_for(request, status)]

@@ -1,11 +1,18 @@
 """In-memory MQTT doubles."""
 
 import asyncio
-from collections.abc import AsyncIterator
+import base64
+import json
+from collections.abc import AsyncIterator, Callable
 
 from ankerprime.interfaces.mqtt import (
     MqttConnection, MqttConnector, MqttEndpoint, MqttMessage)
 from ankerprime.model.errors import ChargerConnectionError
+from ankerprime.protocol.a2345.frame import decode_frame
+from tests.device.charger import Responder
+
+
+MqttResponder = Callable[[str, bytes], list[MqttMessage]]
 
 
 class FakeMqttConnection(MqttConnection):
@@ -17,14 +24,19 @@ class FakeMqttConnection(MqttConnection):
     _inbox: asyncio.Queue[MqttMessage | Exception | None]
     _closed: bool
     _fail_publish: bool
+    _responder: MqttResponder | None
+    _reply_interval: float
 
-    def __init__(self) -> None:
+    def __init__(self, responder: MqttResponder | None = None,
+                 reply_interval: float = 0.0):
         self._subscriptions = []
         self._unsubscriptions = []
         self._published = []
         self._inbox = asyncio.Queue()
         self._closed = False
         self._fail_publish = False
+        self._responder = responder
+        self._reply_interval = reply_interval
 
     @property
     def subscriptions(self) -> list[str]:
@@ -64,6 +76,12 @@ class FakeMqttConnection(MqttConnection):
         if self._fail_publish:
             raise ChargerConnectionError('publish failed')
         self._published.append((topic, payload))
+        if self._responder is None:
+            return
+        loop = asyncio.get_running_loop()
+        for index, message in enumerate(self._responder(topic, payload)):
+            loop.call_later(index * self._reply_interval,
+                            self._inbox.put_nowait, message)
 
     async def messages(self) -> AsyncIterator[MqttMessage]:
         while True:
@@ -87,11 +105,17 @@ class FakeMqttConnection(MqttConnection):
 class FakeMqttConnector(MqttConnector):
     """Hands out fake connections; can be told to fail."""
 
+    _responder: MqttResponder | None
+    _reply_interval: float
+
     _connections: list[FakeMqttConnection]
     _endpoints: list[MqttEndpoint]
     _failures: list[Exception]
 
-    def __init__(self) -> None:
+    def __init__(self, responder: MqttResponder | None = None,
+                 reply_interval: float = 0.0):
+        self._responder = responder
+        self._reply_interval = reply_interval
         self._connections = []
         self._endpoints = []
         self._failures = []
@@ -115,6 +139,19 @@ class FakeMqttConnector(MqttConnector):
         self._endpoints.append(endpoint)
         if self._failures:
             raise self._failures.pop(0)
-        connection = FakeMqttConnection()
+        connection = FakeMqttConnection(self._responder, self._reply_interval)
         self._connections.append(connection)
         return connection
+
+
+def charger_over_mqtt(responder: Responder) -> MqttResponder:
+    """Answer published command envelopes like a charger on the cloud."""
+
+    def respond(topic: str, payload: bytes) -> list[MqttMessage]:
+        envelope = json.loads(payload)
+        frame = base64.b64decode(json.loads(envelope['payload'])['data'])
+        reply_topic = topic.replace('cmd/', 'dt/', 1).replace('/req', '/res')
+        return [MqttMessage(reply_topic, reply)
+                for reply in responder(decode_frame(frame))]
+
+    return respond
