@@ -9,10 +9,10 @@ This is an unofficial project, not affiliated with or endorsed by Anker.
 
 ## Supported chargers
 
-| Model | Name | Connection | Notes |
-|---|---|---|---|
-| A2345 | Anker Prime Charger 250W | Anker cloud (account + MQTT over Wi-Fi) | needs the charger bound in the Anker app |
-| A2687 | Anker Prime 160W | Bluetooth LE (local) | not tested on real hardware by this project |
+| Model | Name                     | Connection                              | Notes                                       |
+|-------|--------------------------|-----------------------------------------|---------------------------------------------|
+| A2345 | Anker Prime Charger 250W | Anker cloud (account + MQTT over Wi-Fi) | needs the charger bound in the Anker app    |
+| A2687 | Anker Prime 160W         | Bluetooth LE (local)                    | not tested on real hardware by this project |
 
 Planned features: per-port voltage/current/power, port on/off, countdowns and
 schedules, charging modes, display settings, energy counters, and a small
@@ -61,6 +61,9 @@ Energy per port is not reported by the charger; the library integrates it
 from the live power readings (nothing is counted while no readings arrive).
 `monitor` keeps these counters in the same folder (`energy-<serial>.json`),
 so they continue across runs; other commands only show them.
+`ankerprime energy-reset [port ...]` sets them to zero (all ports by default;
+with `--serial` it works offline). A `monitor` running at the time follows the
+reset within a minute.
 
 With several chargers on the account, pick one with `--serial`. Run
 `ankerprime --help` or `ankerprime <command> --help` for every option.

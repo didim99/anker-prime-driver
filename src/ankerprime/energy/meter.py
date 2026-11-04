@@ -17,7 +17,9 @@ MAX_GAP = 120.0
 
 
 class EnergyMeter:
-    """Integrates power samples into watt-hour counters that only grow.
+    """Integrates power samples into watt-hour counters.
+
+    Counters only grow, except through ``replace``.
 
     Consecutive samples are joined with the trapezoidal rule. A sample more
     than ``max_gap`` seconds after the previous one, or not after it at all,
@@ -90,6 +92,13 @@ class EnergyMeter:
             if port in self._counters:
                 self._counters[port] = max(self._counters[port],
                                            _non_negative(value))
+
+    def replace(self, counters: Mapping[PortId, float]) -> None:
+        """Overwrite counters, also downwards (resets)."""
+
+        for port, value in counters.items():
+            if port in self._counters:
+                self._counters[port] = _non_negative(value)
 
 
 def _non_negative(value: float) -> float:

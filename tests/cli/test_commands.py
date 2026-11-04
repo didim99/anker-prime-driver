@@ -184,6 +184,32 @@ def test_monitor_prints_requested_count(tmp_path: Path,
     assert json.loads(energy_file.read_text())['counters'] == saved
 
 
+def test_energy_reset(cli: Cli, tmp_path: Path) -> None:
+    energy_file = tmp_path / 'config' / 'energy-serial123.json'
+    code, out = cli.run('energy-reset', '--serial', 'SERIAL123')
+    assert code == 0 and 'No energy counters' in out
+    energy_file.write_text(json.dumps({
+        'version': 1, 'counters': {'c1': 2.5, 'c2': 1.0, 'a1': 0.5}}))
+    code, out = cli.run('energy-reset', 'c1', 'A1', '--serial', 'serial123')
+    assert code == 0
+    assert out.splitlines() == ['Energy counters reset: c1, a1.',
+                                'A running monitor follows within a minute.']
+    document = json.loads(energy_file.read_text())
+    assert document['counters'] == {'c1': 0.0, 'c2': 1.0, 'a1': 0.0}
+    assert set(document['resets']) == {'c1', 'a1'}
+    cli.login()
+    code, out = cli.run('energy-reset')
+    assert code == 0 and 'reset: c1, c2, a1.' in out
+    assert json.loads(energy_file.read_text())['counters'] == {
+        'c1': 0.0, 'c2': 0.0, 'a1': 0.0}
+
+
+def test_energy_reset_rejects_unknown_ports(cli: Cli) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.run('energy-reset', 'c9', '--serial', 'SERIAL123')
+    assert raised.value.code == 2
+
+
 @pytest.mark.parametrize(('detail', 'shows_settings'), [
     ((), False), (('--detail',), True),
 ])

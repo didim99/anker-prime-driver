@@ -443,3 +443,25 @@ async def test_unchanged_energy_is_not_saved(channel: FakeChannel) -> None:
     await device.connect()
     await device.disconnect()
     assert documents.saves == 0
+
+
+async def test_reset_energy_is_saved_at_once(channel: FakeChannel) -> None:
+    documents = MemoryStore({'energy-serial123': {
+        'version': 1, 'counters': {'c1': 5.0, 'c2': 2.0}}})
+    device = energy_device(channel, documents)
+    try:
+        await connected(device)
+        await device.reset_energy([PortId.C1])
+        assert device.state.energy[PortId.C1] == 0.0
+        assert device.state.energy[PortId.C2] == pytest.approx(2.0)
+        document = documents.documents['energy-serial123']
+        assert document['counters']['c1'] == 0.0
+        assert set(document['resets']) == {'c1'}
+    finally:
+        await device.disconnect()
+
+
+async def test_reset_energy_works_while_disconnected(
+        device: A2345Device) -> None:
+    await device.reset_energy()
+    assert set(device.state.energy.values()) == {0.0}

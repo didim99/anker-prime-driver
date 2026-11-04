@@ -7,6 +7,7 @@ from ankerprime.cli.commands.control import (
     AllocationCommand, ClockCommand, ClockScheduleCommand,
     CountdownCommand, DisplayCommand, HolidayCommand, ModeCommand,
     OutputCommand, PriorityCommand, ScheduleCommand, SwitchCommand)
+from ankerprime.cli.commands.energy import EnergyResetCommand
 from ankerprime.cli.commands.reading import MonitorCommand, StatusCommand
 
 
@@ -17,6 +18,7 @@ COMMANDS: dict[str, type[Command]] = {
     'countdown': CountdownCommand,
     'devices': DevicesCommand,
     'display': DisplayCommand,
+    'energy-reset': EnergyResetCommand,
     'holiday': HolidayCommand,
     'login': LoginCommand,
     'logout': LogoutCommand,

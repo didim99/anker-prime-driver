@@ -24,13 +24,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from ankerprime.device.base import BaseCharger
-from ankerprime.energy.meter import EnergyMeter
+from ankerprime.energy.recorder import EnergyRecorder
 from ankerprime.energy.store import EnergyStore
 from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.model.capabilities import Capability
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, HourFormat, KnobDirection,
-    OutputId, ScheduleSlot, ScreenTimeout)
+    OutputId, PortId, ScheduleSlot, ScreenTimeout)
 from ankerprime.model.errors import (
     AnkerPrimeError, AuthenticationError, ChargerConnectionError,
     ChargerTimeoutError, InvalidParameterError, ProtocolError,
@@ -200,12 +200,7 @@ class A2345Device(BaseCharger, ChannelListener):
     _tracker: StateTracker
     _available: bool
 
-    _meter: EnergyMeter
-    _energy_store: EnergyStore | None
-    _energy_loaded: bool
-    _energy_dirty: bool
-    _energy_saved_at: float
-    _energy_lock: asyncio.Lock
+    _energy: EnergyRecorder
 
     _supervisor: asyncio.Task[None] | None
     _maintenance: asyncio.Task[None] | None
@@ -236,12 +231,10 @@ class A2345Device(BaseCharger, ChannelListener):
         self._clock = clock or utc_now
         self._tracker = StateTracker(A2345)
         self._available = False
-        self._meter = EnergyMeter(spec.port for spec in A2345.ports)
-        self._energy_store = energy_store
-        self._energy_loaded = False
-        self._energy_dirty = False
-        self._energy_saved_at = 0.0
-        self._energy_lock = asyncio.Lock()
+        self._energy = EnergyRecorder((spec.port for spec in A2345.ports),
+                                      energy_store,
+                                      label=redact(self._info.serial),
+                                      save_interval=self._timings.energy_save)
         self._supervisor = None
         self._maintenance = None
         self._readback = None
@@ -299,7 +292,8 @@ class A2345Device(BaseCharger, ChannelListener):
         self._stopping = False
         self._last_error = None
         self._failures = 0
-        await self._load_energy()
+        if await self._energy.load():
+            self._publish_state()
         await self._open_link()
         self._supervisor = asyncio.create_task(
             self._supervise(), name='ankerprime-a2345-supervisor')
@@ -317,8 +311,18 @@ class A2345Device(BaseCharger, ChannelListener):
         self._readback = None
         self._tasks.clear()
         await self._channel.close()
-        self._meter.interrupt()
+        self._energy.interrupt()
         self._end_link(ChargerConnectionError('disconnected'))
+        await self._save_energy()
+
+    async def reset_energy(self, ports: Collection[PortId] | None = None
+                           ) -> None:
+        unknown = set(ports or ()) - set(self._energy.counters)
+        if unknown:
+            names = ', '.join(sorted(port.value for port in unknown))
+            raise InvalidParameterError(f'{A2345.code} has no port {names}')
+        self._energy.reset(ports, self._clock())
+        self._publish_state()
         await self._save_energy()
 
     async def refresh(self) -> None:
@@ -509,8 +513,7 @@ class A2345Device(BaseCharger, ChannelListener):
                 self._publish_state()
             if self._settings_due(now):
                 self._spawn(self._request_settings())
-            if (self._energy_dirty and now - self._energy_saved_at
-                    >= timings.energy_save):
+            if self._energy.save_due(now):
                 self._spawn(self._save_energy())
             if now - self._last_trigger >= timings.realtime_refresh:
                 self._last_trigger = now
@@ -546,44 +549,11 @@ class A2345Device(BaseCharger, ChannelListener):
     def _record_energy(self, message: RealtimeTelemetry) -> None:
         powers = {port: reading.power
                   for port, reading in message.ports.items()}
-        if self._meter.record(_monotonic(), powers):
-            self._energy_dirty = True
-
-    async def _load_energy(self) -> None:
-        """Continue from the stored counters, once per device."""
-
-        if self._energy_store is None or self._energy_loaded:
-            return
-        self._energy_loaded = True
-        try:
-            counters = await self._energy_store.load()
-        except (AnkerPrimeError, OSError) as error:
-            logger.warning('energy counters of %s not loaded: %s',
-                           redact(self._info.serial), error)
-            return
-        if counters is None:
-            return
-        self._meter.restore(counters)
-        self._publish_state()
+        self._energy.record(_monotonic(), powers)
 
     async def _save_energy(self) -> None:
-        if self._energy_store is None or not self._energy_dirty:
-            return
-        async with self._energy_lock:
-            if not self._energy_dirty:
-                return
-            self._energy_dirty = False
-            self._energy_saved_at = _monotonic()
-            try:
-                await self._energy_store.save(self._meter.counters,
-                                              self._clock())
-            except (AnkerPrimeError, OSError) as error:
-                self._energy_dirty = True
-                logger.warning('energy counters of %s not saved: %s',
-                               redact(self._info.serial), error)
-            except asyncio.CancelledError:
-                self._energy_dirty = True
-                raise
+        if await self._energy.save(_monotonic(), self._clock()):
+            self._publish_state()
 
     async def _request_settings(self) -> None:
         self._settings_requested_at = _monotonic()
@@ -677,7 +647,7 @@ class A2345Device(BaseCharger, ChannelListener):
     def _publish_state(self) -> None:
         state = self._tracker.build(info=self._info,
                                     available=self._available,
-                                    energy=self._meter.counters)
+                                    energy=self._energy.counters)
         self._publish(state)
 
 

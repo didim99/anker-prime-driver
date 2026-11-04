@@ -6,7 +6,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import TypeVar
 
-from ankerprime.model.enums import OutputId, Weekday
+from ankerprime.model.enums import OutputId, PortId, Weekday
 
 
 EnumT = TypeVar('EnumT', bound=StrEnum)
@@ -38,6 +38,17 @@ def parse_output(text: str) -> OutputId:
         choices = ', '.join(output.value for output in OutputId)
         raise argparse.ArgumentTypeError(
             f'unknown output {text!r}; choose from {choices}') from None
+
+
+def parse_port(text: str) -> PortId:
+    """``c1``…``c4``, ``a1`` or ``a2``, any case."""
+
+    try:
+        return PortId(text.strip().lower())
+    except ValueError:
+        choices = ', '.join(port.value for port in PortId)
+        raise argparse.ArgumentTypeError(
+            f'unknown port {text!r}; choose from {choices}') from None
 
 
 def parse_switch(text: str) -> bool:

@@ -11,8 +11,9 @@ from collections.abc import Callable, Collection
 
 from ankerprime.model.capabilities import Capability
 from ankerprime.model.enums import (
-    ChargingMode, ClockTheme, DisplayLanguage, FixedAllocation, HourFormat,
-    KnobDirection, OutputId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
+    ChargingMode, ClockTheme, DisplayLanguage,
+    FixedAllocation, HourFormat, KnobDirection, OutputId,
+    PortId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import AnkerPrimeError
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
@@ -71,6 +72,17 @@ class Charger(ABC):
 
     @abstractmethod
     async def disconnect(self) -> None:
+        pass
+
+    @abstractmethod
+    async def reset_energy(self, ports: Collection[PortId] | None = None
+                           ) -> None:
+        """Set the energy counters of the ports (all when None) to zero.
+
+        Also works while disconnected. The reset is saved to the energy store
+        at once, so other processes counting into the same store follow it.
+        """
+
         pass
 
     @abstractmethod
