@@ -15,6 +15,7 @@ from ankerprime import __version__
 from ankerprime.cli.base import CliContext, Command, HttpFactory
 from ankerprime.cli.commands import COMMANDS
 from ankerprime.cli.config import CliConfig, default_config_dir
+from ankerprime.cli.style import ColorMode, Painter, ansi_terminal, use_color
 from ankerprime.cloud.http import AiohttpClient
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.mqtt import MqttConnector
@@ -39,6 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
                              f'{default_config_dir()})')
     parser.add_argument('--debug', action='store_true',
                         help='log library details (identifiers are shortened)')
+    parser.add_argument('--color', type=ColorMode, default=ColorMode.AUTO,
+                        choices=list(ColorMode),
+                        help='colour the output (default: auto, for '
+                             'terminals unless NO_COLOR is set)')
     subparsers = parser.add_subparsers(dest='command', metavar='command')
     for name, command_class in COMMANDS.items():
         command = command_class()
@@ -66,9 +71,13 @@ def main(argv: list[str] | None = None, *,
         return EXIT_OK
     _configure_logging(args.debug)
     output = out or sys.stdout
+    errors = Painter(use_color(args.color, sys.stderr))
     config = CliConfig(args.config_dir or default_config_dir())
+    ansi = ansi_terminal(output)
     context = CliContext(config, http_factory or aiohttp_client, output,
-                         connector=connector, tls_factory=tls_factory)
+                         connector=connector, tls_factory=tls_factory,
+                         painter=Painter(use_color(args.color, output)),
+                         ansi=ansi)
     try:
         command: Command = args.handler
         with asyncio.Runner(loop_factory=_loop_factory()) as runner:
@@ -76,11 +85,12 @@ def main(argv: list[str] | None = None, *,
     except KeyboardInterrupt:
         return EXIT_INTERRUPTED
     except AuthenticationError as error:
-        print(f'error: {error}', file=sys.stderr)
-        print('hint: run "ankerprime login" again', file=sys.stderr)
+        print(f'{errors.bad("error:")} {error}', file=sys.stderr)
+        print(errors.warn('hint: run "ankerprime login" again'),
+              file=sys.stderr)
         return EXIT_AUTHENTICATION
     except AnkerPrimeError as error:
-        print(f'error: {error}', file=sys.stderr)
+        print(f'{errors.bad("error:")} {error}', file=sys.stderr)
         return EXIT_ERROR
 
 

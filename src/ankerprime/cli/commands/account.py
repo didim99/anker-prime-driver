@@ -30,9 +30,11 @@ class LoginCommand(Command):
                 credentials.email, credentials.password, credentials.country)
         kept = None if args.no_save_password else credentials
         await context.config.save_login(authentication, kept)
-        context.print(f'Signed in as user {authentication.user_id} '
-                      f'on {authentication.server}.')
-        context.print(f'Login stored in {context.config.directory}.')
+        painter = context.painter
+        context.print(painter.good(f'Signed in as user {authentication.user_id}'
+                                   f' on {authentication.server}.'))
+        context.print(painter.dim('Login stored in '
+                                  f'{context.config.directory}.'))
         return 0
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
@@ -53,7 +55,7 @@ class LogoutCommand(Command):
     async def run(self, context: CliContext,
                   args: argparse.Namespace) -> int:
         await context.config.clear()
-        context.print('Stored login removed.')
+        context.print(context.painter.good('Stored login removed.'))
         return 0
 
 
@@ -63,13 +65,17 @@ class RegionsCommand(Command):
 
     async def run(self, context: CliContext,
                   args: argparse.Namespace) -> int:
+        painter = context.painter
         rows = []
         for code, name in REGIONS.items():
             host = server_for(code).removeprefix('https://')
             if code in UNSUPPORTED_REGIONS:
-                host += ' (SMS login, unsupported)'
-            rows.append((code, name, host))
-        context.print(render_table(('Code', 'Country', 'Server'), rows))
+                rows.append((painter.dim(code), painter.dim(name),
+                             painter.dim(host + ' (SMS login, unsupported)')))
+            else:
+                rows.append((painter.accent(code), name, host))
+        context.print(render_table(('Code', 'Country', 'Server'), rows,
+                                   painter=painter))
         return 0
 
 
@@ -81,7 +87,7 @@ class DevicesCommand(Command):
                   args: argparse.Namespace) -> int:
         async with context.account() as account:
             devices = await account.bound_devices()
-        context.print(render_devices(devices))
+        context.print(render_devices(devices, painter=context.painter))
         return 0
 
 

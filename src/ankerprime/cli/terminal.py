@@ -3,6 +3,8 @@
 import shutil
 from typing import Self, TextIO
 
+from ankerprime.cli.style import truncate_visible
+
 
 HIDE_CURSOR = '\x1b[?25l'
 SHOW_CURSOR = '\x1b[?25h'
@@ -13,8 +15,8 @@ class TerminalBlock:
     """Replaces its previous text instead of appending below it.
 
     Only the lines it wrote are cleared, so earlier output and the scrollback
-    stay intact. Lines are cut to the terminal width, since wrapped lines
-    would break the line count.
+    stay intact. Lines are cut to the terminal width (colours kept), since
+    wrapped lines would break the line count.
     """
 
     _out: TextIO
@@ -34,7 +36,8 @@ class TerminalBlock:
 
     def show(self, text: str) -> None:
         size = shutil.get_terminal_size()
-        lines = [line[:size.columns] for line in text.splitlines()]
+        lines = [truncate_visible(line, size.columns)
+                 for line in text.splitlines()]
         lines = lines[:max(size.lines - 1, 1)]
         prefix = f'\x1b[{self._lines}F' if self._lines else ''
         self._out.write(prefix + CLEAR_BELOW + '\n'.join(lines) + '\n')

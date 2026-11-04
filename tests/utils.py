@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import io
 import ssl
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -13,6 +14,13 @@ from ankerprime.interfaces.storage import DocumentStore, JsonDocument
 
 
 DEFAULT_EXPIRY = 2_000_000_000
+
+
+class Terminal(io.StringIO):
+    """Output stream that claims to be a terminal."""
+
+    def isatty(self) -> bool:
+        return True
 
 
 class MemoryStore(DocumentStore):

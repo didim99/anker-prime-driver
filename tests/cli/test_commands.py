@@ -20,14 +20,7 @@ from ankerprime.model import A2345, Capability, Verification
 from tests.cloud.fakes import DEVICES, FakeAnkerCloud, FakeHttpClient
 from tests.device.charger import charger_responder
 from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt
-from tests.utils import no_tls
-
-
-class Terminal(io.StringIO):
-    """Output stream that claims to be a terminal."""
-
-    def isatty(self) -> bool:
-        return True
+from tests.utils import Terminal, no_tls
 
 
 class Cli:
@@ -57,9 +50,11 @@ class Cli:
     def authentication(self) -> Authentication | None:
         return asyncio.run(CliConfig(self._config_dir).authentication())
 
-    def run(self, *argv: str, tty: bool = False) -> tuple[int, str]:
+    def run(self, *argv: str, tty: bool = False,
+            color: str = 'never') -> tuple[int, str]:
         out = Terminal() if tty else io.StringIO()
-        code = main(['--config-dir', str(self._config_dir), *argv],
+        code = main(['--config-dir', str(self._config_dir), '--color', color,
+                     *argv],
                     http_factory=self._http, connector=self._connector,
                     tls_factory=no_tls, out=out)
         return code, out.getvalue()
@@ -225,6 +220,18 @@ def test_monitor_redraws_in_place_on_a_terminal(
     assert all('Running since ' in view and 'Updated ' in view
                and 'C1 ' in view for view in views)
     assert ('Mode:' in out) is shows_settings
+
+
+def test_colours_on_request(cli: Cli) -> None:
+    cli.login()
+    code, out = cli.run('status', color='always')
+    assert code == 0
+    assert '\x1b[32mlive\x1b[0m' in out
+    assert '\x1b[1;4mPort\x1b[0m' in out
+    code, out = cli.run('output', 'c1', 'on', color='always')
+    assert out.strip() == '\x1b[32mc1 switched on.\x1b[0m'
+    code, out = cli.run('status', '--json', color='always')
+    assert '\x1b[' not in out
 
 
 def test_verified_write_prints_confirmation_only(cli: Cli) -> None:

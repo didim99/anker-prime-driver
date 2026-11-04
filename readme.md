@@ -65,6 +65,10 @@ so they continue across runs; other commands only show them.
 with `--serial` it works offline). A `monitor` running at the time follows the
 reset within a minute.
 
+Output is colored on terminals; `--color never|always` overrides that, and
+the `NO_COLOR` / `FORCE_COLOR` environment variables are honored. JSON output
+is never colored.
+
 With several chargers on the account, pick one with `--serial`. Run
 `ankerprime --help` or `ankerprime <command> --help` for every option.
 Commands marked experimental print a note: they follow the protocol but are

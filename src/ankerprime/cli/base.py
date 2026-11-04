@@ -11,6 +11,7 @@ from typing import ClassVar, TextIO
 
 from ankerprime.api.cloud import CLOUD_PRODUCTS, CloudAccount
 from ankerprime.cli.config import CliConfig
+from ankerprime.cli.style import PLAIN, Painter
 from ankerprime.cloud.auth import Authentication
 from ankerprime.cloud.client import BoundDevice
 from ankerprime.interfaces.charger import Charger
@@ -37,17 +38,22 @@ class CliContext:
     _connector: MqttConnector | None
     _tls_factory: TlsFactory | None
     _out: TextIO
+    _painter: Painter
+    _ansi: bool
 
     _new_authentication: Authentication | None
 
     def __init__(self, config: CliConfig, http_factory: HttpFactory,
                  out: TextIO, *, connector: MqttConnector | None = None,
-                 tls_factory: TlsFactory | None = None):
+                 tls_factory: TlsFactory | None = None,
+                 painter: Painter = PLAIN, ansi: bool = False):
         self._config = config
         self._http_factory = http_factory
         self._connector = connector
         self._tls_factory = tls_factory
         self._out = out
+        self._painter = painter
+        self._ansi = ansi
         self._new_authentication = None
 
     @property
@@ -57,6 +63,18 @@ class CliContext:
     @property
     def out(self) -> TextIO:
         return self._out
+
+    @property
+    def painter(self) -> Painter:
+        """Colours for ``out``; plain when colours are off."""
+
+        return self._painter
+
+    @property
+    def ansi(self) -> bool:
+        """``out`` is a terminal that interprets escape sequences."""
+
+        return self._ansi
 
     def print(self, text: str = '') -> None:
         print(text, file=self._out, flush=True)

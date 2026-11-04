@@ -29,14 +29,17 @@ class EnergyResetCommand(Command):
         store = EnergyStore.for_serial(context.config.energy_store(True),
                                        serial)
         record = await store.reset(args.ports or None, utc_now())
+        painter = context.painter
         if not record.counters:
-            context.print('No energy counters are stored for this charger.')
+            context.print(painter.warn('No energy counters are stored for '
+                                       'this charger.'))
             return 0
         order = list(PortId)
         reset = sorted(args.ports or record.counters, key=order.index)
         names = ', '.join(port.value for port in reset)
-        context.print(f'Energy counters reset: {names}.')
-        context.print('A running monitor follows within a minute.')
+        context.print(painter.good(f'Energy counters reset: {names}.'))
+        context.print(painter.dim('A running monitor follows within a '
+                                  'minute.'))
         return 0
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:

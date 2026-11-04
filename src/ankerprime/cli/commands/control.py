@@ -43,11 +43,13 @@ class ControlCommand(ChargerCommand):
 
     async def run_charger(self, context: CliContext, charger: Charger,
                           args: argparse.Namespace) -> int:
+        painter = context.painter
         for capability, message in await self.apply(charger, args):
-            context.print(message)
+            context.print(painter.good(message))
             verification = charger.state.capabilities.get(capability)
             if verification == Verification.EXPERIMENTAL:
-                context.print(EXPERIMENTAL_NOTE.format(capability=capability))
+                note = EXPERIMENTAL_NOTE.format(capability=capability)
+                context.print(painter.warn(note))
         return 0
 
     @abstractmethod
