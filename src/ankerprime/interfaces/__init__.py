@@ -2,6 +2,7 @@
 
 from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.interfaces.charger import Charger, ChargerListener, Unsubscribe
+from ankerprime.interfaces.http import HttpClient, HttpResponse
 from ankerprime.interfaces.storage import DocumentStore, JsonDocument
 
 
@@ -11,6 +12,8 @@ __all__ = [
     'Charger',
     'ChargerListener',
     'DocumentStore',
+    'HttpClient',
+    'HttpResponse',
     'JsonDocument',
     'Unsubscribe',
 ]
