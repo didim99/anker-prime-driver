@@ -2,57 +2,20 @@
 
 from ankerprime.model.capabilities import Capability, Verification
 from ankerprime.model.enums import (
-    CableRating,
-    ChargingMode,
-    ChargingProtocol,
-    ClockTheme,
-    ConnectorType,
-    DeviceBrand,
-    DisplayLanguage,
-    FixedAllocation,
-    HourFormat,
-    KnobDirection,
-    OutputId,
-    PortId,
-    ProductCode,
-    ScheduleSlot,
-    ScreenOrientation,
-    ScreenTimeout,
-    Weekday,
-)
+    CableRating, ChargingMode, ChargingProtocol, ClockTheme,
+    ConnectorType, DeviceBrand, DisplayLanguage, FixedAllocation,
+    HourFormat, KnobDirection, OutputId, PortId, ProductCode,
+    ScheduleSlot, ScreenOrientation, ScreenTimeout, Weekday)
 from ankerprime.model.errors import (
-    AnkerPrimeError,
-    AuthenticationError,
-    ChargerConnectionError,
-    ChargerTimeoutError,
-    InvalidParameterError,
-    ProtocolError,
-    UnknownProductError,
-    UnsupportedCapabilityError,
-    WriteRejectedError,
-)
+    AnkerPrimeError, AuthenticationError, ChargerConnectionError,
+    ChargerTimeoutError, InvalidParameterError, ProtocolError,
+    UnknownProductError, UnsupportedCapabilityError, WriteRejectedError)
 from ankerprime.model.product import (
-    A2345,
-    A2687,
-    PRODUCTS,
-    OutputSpec,
-    PortSpec,
-    Product,
-    ValueRange,
-    get_product,
-)
+    A2345, A2687, PRODUCTS, OutputSpec,
+    PortSpec, Product, ValueRange, get_product)
 from ankerprime.model.state import (
-    ChargerSettings,
-    ChargerState,
-    ClockSchedule,
-    ClockSettings,
-    Countdown,
-    DeviceInfo,
-    DisplaySettings,
-    OutputState,
-    PortReading,
-    Schedule,
-)
+    ChargerSettings, ChargerState, ClockSchedule, ClockSettings, Countdown,
+    DeviceInfo, DisplaySettings, OutputState, PortReading, Schedule)
 
 
 __all__ = [

@@ -3,19 +3,9 @@
 import pytest
 
 from ankerprime.model import (
-    A2345,
-    A2687,
-    Capability,
-    ChargingMode,
-    InvalidParameterError,
-    OutputId,
-    PortId,
-    ProductCode,
-    UnknownProductError,
-    ValueRange,
-    Verification,
-    get_product,
-)
+    A2345, A2687, Capability, ChargingMode,
+    InvalidParameterError, OutputId, PortId, ProductCode,
+    UnknownProductError, ValueRange, Verification, get_product)
 
 
 def test_a2345_ports_and_outputs() -> None:

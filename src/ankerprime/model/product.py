@@ -6,14 +6,8 @@ from types import MappingProxyType
 
 from ankerprime.model.capabilities import Capability, Verification
 from ankerprime.model.enums import (
-    ChargingMode,
-    ConnectorType,
-    DisplayLanguage,
-    OutputId,
-    PortId,
-    ProductCode,
-    ScreenTimeout,
-)
+    ChargingMode, ConnectorType, DisplayLanguage,
+    OutputId, PortId, ProductCode, ScreenTimeout)
 from ankerprime.model.errors import InvalidParameterError, UnknownProductError
 
 

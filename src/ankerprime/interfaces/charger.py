@@ -11,17 +11,8 @@ from collections.abc import Callable, Collection
 
 from ankerprime.model.capabilities import Capability
 from ankerprime.model.enums import (
-    ChargingMode,
-    ClockTheme,
-    DisplayLanguage,
-    FixedAllocation,
-    HourFormat,
-    KnobDirection,
-    OutputId,
-    ScheduleSlot,
-    ScreenOrientation,
-    ScreenTimeout,
-)
+    ChargingMode, ClockTheme, DisplayLanguage, FixedAllocation, HourFormat,
+    KnobDirection, OutputId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
 

@@ -5,20 +5,9 @@ from datetime import UTC, datetime
 import pytest
 
 from ankerprime.model import (
-    A2345,
-    Capability,
-    ChargerState,
-    ClockSchedule,
-    Countdown,
-    InvalidParameterError,
-    OutputId,
-    OutputState,
-    PortId,
-    PortReading,
-    Schedule,
-    Verification,
-    Weekday,
-)
+    A2345, Capability, ChargerState, ClockSchedule,
+    Countdown, InvalidParameterError, OutputId, OutputState,
+    PortId, PortReading, Schedule, Verification, Weekday)
 
 
 NOW = datetime(2026, 11, 4, 12, 0, tzinfo=UTC)

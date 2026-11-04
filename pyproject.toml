@@ -64,19 +64,15 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
+# No "I" (isort): its fixed layout puts the closing bracket of multi-line
+# imports on its own line, which the codestyle forbids.
 select = [
     "B",   # bugbear
     "E",   # pycodestyle errors
     "F",   # pyflakes
-    "I",   # import sorting
     "UP",  # pyupgrade (3.11 syntax)
     "W",   # pycodestyle warnings
 ]
-
-[tool.ruff.lint.isort]
-force-sort-within-sections = true
-known-first-party = ["ankerprime"]
-lines-after-imports = 2
 
 [tool.mypy]
 python_version = "3.11"

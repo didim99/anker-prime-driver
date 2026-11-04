@@ -12,21 +12,9 @@ from typing import ClassVar
 
 from ankerprime.model.capabilities import Capability, Verification
 from ankerprime.model.enums import (
-    CableRating,
-    ChargingMode,
-    ChargingProtocol,
-    ClockTheme,
-    DeviceBrand,
-    DisplayLanguage,
-    FixedAllocation,
-    HourFormat,
-    KnobDirection,
-    OutputId,
-    PortId,
-    ScreenOrientation,
-    ScreenTimeout,
-    Weekday,
-)
+    CableRating, ChargingMode, ChargingProtocol, ClockTheme, DeviceBrand,
+    DisplayLanguage, FixedAllocation, HourFormat, KnobDirection,
+    OutputId, PortId, ScreenOrientation, ScreenTimeout, Weekday)
 from ankerprime.model.errors import InvalidParameterError
 from ankerprime.model.product import Product
 

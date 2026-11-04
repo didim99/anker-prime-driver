@@ -42,8 +42,8 @@ mypy
 pytest
 ```
 
-Formatting is done by hand following the project codestyle; `ruff check` verifies
-line length and import order. Release builds use `python -m build` and `twine`.
+Formatting and import order follow the project codestyle by hand; `ruff check`
+verifies line length and common lint rules. Release builds use `python -m build` and `twine`.
 
 ## Credits
 
