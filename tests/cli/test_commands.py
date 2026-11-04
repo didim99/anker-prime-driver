@@ -16,6 +16,7 @@ from ankerprime.cli.config import (
 from ankerprime.cli.main import EXIT_AUTHENTICATION, EXIT_ERROR, main
 from ankerprime.cloud.auth import AccountCredentials, Authentication
 from ankerprime.interfaces.http import HttpClient
+from ankerprime.model import A2345, Capability, Verification
 from tests.cloud.fakes import DEVICES, FakeAnkerCloud, FakeHttpClient
 from tests.device.charger import charger_responder
 from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt
@@ -185,7 +186,8 @@ def test_monitor_redraws_in_place_on_a_terminal(
     assert out.startswith('\x1b[?25l\x1b[J') and out.endswith('\x1b[?25h')
     views = out.split('F\x1b[J')
     assert len(views) == 2
-    assert all('Updated ' in view and 'C1 ' in view for view in views)
+    assert all('Running since ' in view and 'Updated ' in view
+               and 'C1 ' in view for view in views)
     assert ('Mode:' in out) is shows_settings
 
 
@@ -199,7 +201,11 @@ def test_verified_write_prints_confirmation_only(cli: Cli) -> None:
     assert len(published) >= 4
 
 
-def test_experimental_write_asks_for_verification(cli: Cli) -> None:
+def test_experimental_write_asks_for_verification(
+        cli: Cli, monkeypatch: pytest.MonkeyPatch) -> None:
+    capabilities = dict(A2345.capabilities)
+    capabilities[Capability.MAX_COMPATIBILITY] = Verification.EXPERIMENTAL
+    monkeypatch.setattr(A2345, '_capabilities', capabilities)
     cli.login()
     code, out = cli.run('switch', 'max-compatibility', 'on')
     assert code == 0

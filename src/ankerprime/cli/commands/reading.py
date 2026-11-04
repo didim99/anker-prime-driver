@@ -6,7 +6,8 @@ import json
 from datetime import datetime
 
 from ankerprime.cli.base import ChargerCommand, CliContext
-from ankerprime.cli.render import render_readings, render_state
+from ankerprime.cli.render import (
+    render_readings, render_runtime, render_state)
 from ankerprime.cli.terminal import TerminalBlock
 from ankerprime.interfaces.charger import Charger
 from ankerprime.model.serialize import state_to_dict
@@ -37,8 +38,8 @@ class MonitorCommand(ChargerCommand):
     """Live port readings, redrawn in place on a terminal.
 
     On a terminal the view is redrawn every interval, so the age of the last
-    update keeps counting while the charger is silent. Piped or as JSON, one
-    state is printed per update.
+    update and the run time keep counting while the charger is silent. Piped
+    or as JSON, one state is printed per update.
     """
 
     NAME = 'monitor'
@@ -66,10 +67,11 @@ class MonitorCommand(ChargerCommand):
     async def _redraw(self, context: CliContext, charger: Charger,
                       args: argparse.Namespace) -> None:
         interval = max(args.interval, MIN_REDRAW_INTERVAL)
+        started = _local_now()
         shown = 0
         with TerminalBlock(context.out) as block:
             while True:
-                block.show(_render(charger.state, args.detail))
+                block.show(_view(charger.state, args.detail, started))
                 shown += 1
                 if args.count and shown >= args.count:
                     return
@@ -79,6 +81,7 @@ class MonitorCommand(ChargerCommand):
                       args: argparse.Namespace) -> None:
         updates: asyncio.Queue[ChargerState] = asyncio.Queue()
         unsubscribe = charger.subscribe(updates.put_nowait)
+        started = _local_now()
         shown = 0
         try:
             state = charger.state
@@ -86,7 +89,7 @@ class MonitorCommand(ChargerCommand):
                 if args.json:
                     context.print(_to_json(state))
                 else:
-                    context.print(_render(state, args.detail) + '\n')
+                    context.print(_view(state, args.detail, started) + '\n')
                 shown += 1
                 if args.count and shown >= args.count:
                     return
@@ -105,10 +108,10 @@ async def _latest(updates: asyncio.Queue[ChargerState]) -> ChargerState:
     return state
 
 
-def _render(state: ChargerState, detail: bool) -> str:
-    if detail:
-        return render_state(state, _local_now())
-    return render_readings(state, _local_now())
+def _view(state: ChargerState, detail: bool, started: datetime) -> str:
+    now = _local_now()
+    render = render_state if detail else render_readings
+    return render_runtime(started, now) + '\n' + render(state, now)
 
 
 def _to_json(state: ChargerState) -> str:

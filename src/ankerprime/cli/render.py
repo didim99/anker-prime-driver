@@ -64,6 +64,14 @@ def format_days(days: Weekday) -> str:
                     if days & (1 << index))
 
 
+def render_runtime(started: datetime, now: datetime) -> str:
+    """How long a command has been running, in the time zone of ``now``."""
+
+    local = started.astimezone(now.tzinfo)
+    elapsed = format_duration((now - started).total_seconds())
+    return f'Running since {local:%Y-%m-%d %H:%M:%S} ({elapsed})'
+
+
 def format_age(seconds: float) -> str:
     """Compact elapsed time: ``5 s``, ``2:05``, ``1:02:05``."""
 
@@ -73,9 +81,14 @@ def format_age(seconds: float) -> str:
 
 
 def format_duration(seconds: float) -> str:
+    """``0:59``, ``1:02:05``, ``2d 1:02:05``."""
+
     seconds = max(int(seconds), 0)
-    hours, rest = divmod(seconds, 3600)
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
     minutes, seconds = divmod(rest, 60)
+    if days:
+        return f'{days}d {hours}:{minutes:02d}:{seconds:02d}'
     if hours:
         return f'{hours}:{minutes:02d}:{seconds:02d}'
     return f'{minutes}:{seconds:02d}'

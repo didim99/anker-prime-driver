@@ -272,8 +272,8 @@ A2345 = Product(
         Capability.CLOCK_SCHEDULE: Verification.VERIFIED,
         Capability.HOLIDAY_THEME: Verification.VERIFIED,
         Capability.CLOCK_PICTURE: Verification.PLANNED,
-        Capability.MAX_COMPATIBILITY: Verification.EXPERIMENTAL,
-        Capability.DEVICE_IDENTIFICATION: Verification.EXPERIMENTAL,
+        Capability.MAX_COMPATIBILITY: Verification.VERIFIED,
+        Capability.DEVICE_IDENTIFICATION: Verification.VERIFIED,
         Capability.UFCS: Verification.EXPERIMENTAL,
     },
     charging_modes=(

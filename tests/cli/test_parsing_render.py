@@ -11,8 +11,8 @@ from ankerprime.cli.parsing import (
     enum_converter, parse_countdown, parse_days,
     parse_duration, parse_output, parse_switch, parse_time)
 from ankerprime.cli.render import (
-    format_age, format_days, format_duration,
-    render_devices, render_readings, render_state, render_table)
+    format_age, format_days, format_duration, render_devices,
+    render_readings, render_runtime, render_state, render_table)
 from ankerprime.cli.terminal import TerminalBlock
 from ankerprime.cloud.client import BoundDevice
 from ankerprime.model import ChargingMode, OutputId, ScreenTimeout, Weekday
@@ -91,6 +91,7 @@ def test_format_days(days: Weekday, text: str) -> None:
 
 @pytest.mark.parametrize(('seconds', 'text'), [
     (59, '0:59'), (600, '10:00'), (3725, '1:02:05'), (-3, '0:00'),
+    (2 * 86400 + 3725, '2d 1:02:05'),
 ])
 def test_format_duration(seconds: float, text: str) -> None:
     assert format_duration(seconds) == text
@@ -101,6 +102,11 @@ def test_format_duration(seconds: float, text: str) -> None:
 ])
 def test_format_age(seconds: float, text: str) -> None:
     assert format_age(seconds) == text
+
+
+def test_render_runtime() -> None:
+    text = render_runtime(NOW, NOW + timedelta(hours=26, seconds=5))
+    assert text == 'Running since 2026-11-04 12:00:00 (1d 2:00:05)'
 
 
 def test_render_table_aligns_columns() -> None:
