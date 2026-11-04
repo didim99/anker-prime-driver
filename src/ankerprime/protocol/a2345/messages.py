@@ -13,7 +13,10 @@ from types import MappingProxyType
 from ankerprime.model.enums import PortId
 from ankerprime.model.errors import ProtocolError
 from ankerprime.protocol.a2345.frame import (
-    TAG_SESSION, TAG_TIMESTAMP, VALUE_TYPE_BYTES, VALUE_TYPE_U32, Frame, Tlv)
+    TAG_SESSION, TAG_TIMESTAMP, VALUE_TYPE_BYTES,
+    VALUE_TYPE_U32, Frame, Message, Tlv)
+from ankerprime.protocol.a2345.settings import (
+    DeviceSettings, decode_settings_change, decode_write_acknowledgement)
 
 
 MSG_REALTIME = 0x0303
@@ -188,7 +191,7 @@ class MetadataSlot:
 
 
 @dataclass(init=False)
-class RealtimeTelemetry:
+class RealtimeTelemetry(Message):
     """Decoded ``0x0303`` realtime message."""
 
     _response_marker: int | None
@@ -244,20 +247,26 @@ class RealtimeTelemetry:
 
 
 @dataclass(init=False)
-class StatusSnapshot:
+class StatusSnapshot(Message):
     """Decoded ``0x0A00`` full-device message."""
 
     _ports: Mapping[PortId, RawPortReading]
+    _settings: DeviceSettings
     _unknown_fields: tuple[Tlv, ...]
 
     def __init__(self, ports: Mapping[PortId, RawPortReading],
-                 unknown_fields: Iterable[Tlv]):
+                 settings: DeviceSettings, unknown_fields: Iterable[Tlv]):
         self._ports = MappingProxyType(dict(ports))
+        self._settings = settings
         self._unknown_fields = tuple(unknown_fields)
 
     @property
     def ports(self) -> Mapping[PortId, RawPortReading]:
         return self._ports
+
+    @property
+    def settings(self) -> DeviceSettings:
+        return self._settings
 
     @property
     def unknown_fields(self) -> tuple[Tlv, ...]:
@@ -267,7 +276,7 @@ class StatusSnapshot:
 
 
 @dataclass(init=False)
-class VersionInfo:
+class VersionInfo(Message):
     """Decoded ``0x0830`` version message."""
 
     _hardware_version: str
@@ -316,7 +325,21 @@ class VersionInfo:
 
 
 @dataclass(init=False)
-class Acknowledgement:
+class UnknownMessage(Message):
+    """Valid frame of a message type this library does not decode."""
+
+    _frame: Frame
+
+    def __init__(self, frame: Frame):
+        self._frame = frame
+
+    @property
+    def frame(self) -> Frame:
+        return self._frame
+
+
+@dataclass(init=False)
+class Acknowledgement(Message):
     """Decoded 14-byte telemetry acknowledgement; the marker has no known meaning."""
 
     _message_type: int
@@ -396,6 +419,30 @@ class FieldReader:
                 if field.tag == tag]
 
 
+def decode_message(frame: Frame) -> Message:
+    """Decode any frame the charger sends.
+
+    Telemetry, snapshot and version messages are decoded strictly; change
+    messages and ``0x0ANN`` write acks leniently; anything else is returned
+    as ``UnknownMessage``. Telemetry acks decode as write acks here; use
+    ``decode_acknowledgement`` for their marker.
+    """
+
+    if frame.message_type == MSG_REALTIME:
+        return decode_realtime(frame)
+    if frame.message_type == MSG_STATUS_SNAPSHOT:
+        return decode_status_snapshot(frame)
+    if frame.message_type == MSG_VERSION_INFO:
+        return decode_version_info(frame)
+    change = decode_settings_change(frame)
+    if change is not None:
+        return change
+    acknowledgement = decode_write_acknowledgement(frame)
+    if acknowledgement is not None:
+        return acknowledgement
+    return UnknownMessage(frame)
+
+
 def decode_realtime(frame: Frame) -> RealtimeTelemetry:
     """Decode a ``0x0303`` frame; optional metadata never fails the message."""
 
@@ -428,13 +475,14 @@ def decode_realtime(frame: Frame) -> RealtimeTelemetry:
 
 
 def decode_status_snapshot(frame: Frame) -> StatusSnapshot:
-    """Decode the port readings of a ``0x0A00`` frame."""
+    """Decode a ``0x0A00`` frame: strict port readings, lenient settings."""
 
     _check_message_type(frame, MSG_STATUS_SNAPSHOT)
     reader = FieldReader(frame)
     ports = {port: decode_port_reading(reader.required(tag))
              for tag, port in enumerate(PORTS, TAG_SNAPSHOT_FIRST_PORT)}
-    return StatusSnapshot(ports, reader.unconsumed())
+    settings = DeviceSettings.from_snapshot(frame)
+    return StatusSnapshot(ports, settings, reader.unconsumed())
 
 
 def decode_version_info(frame: Frame) -> VersionInfo:

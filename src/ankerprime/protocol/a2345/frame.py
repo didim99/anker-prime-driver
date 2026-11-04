@@ -69,6 +69,10 @@ class FrameError(ProtocolError):
         return self._kind
 
 
+class Message:
+    """Base class of every decoded A2345 message."""
+
+
 @dataclass(init=False)
 class Tlv:
     """One field in wire order; ``raw`` keeps any value-type prefix."""
