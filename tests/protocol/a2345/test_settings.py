@@ -207,3 +207,35 @@ def test_single_output_priority_update() -> None:
     settings = snapshot_settings()
     settings.apply(PriorityUpdate(output=OutputId.C3, preferred=True))
     assert settings.priority_bitmap == 0b0100
+
+
+def test_snapshot_keeps_theme_status_details() -> None:
+    previous = DeviceSettings()
+    clock = ClockState(True, False, 3, theme_id=7, theme_url='https://x/y',
+                       showing_holiday=True)
+    previous.apply(ClockUpdate(clock, True))
+    fresh = snapshot_settings()
+    fresh.apply(ClockUpdate(ClockState(True, False, 3, theme_id=7)))
+    fresh.keep_theme_details(previous)
+    kept = fresh.clock
+    assert kept is not None
+    assert kept.theme_url == 'https://x/y' and kept.showing_holiday is True
+    assert fresh.image_time_display is True
+
+    changed = snapshot_settings()
+    changed.keep_theme_details(previous)
+    assert changed.clock is not None and changed.clock.theme_url is None
+
+
+@pytest.mark.parametrize(('field', 'value', 'attribute', 'expected'), [
+    (SettingField.HOUR_FORMAT, 0, 'hour_format', 0),
+    (SettingField.MAX_COMPATIBILITY, 1, 'max_compatibility', True),
+    (SettingField.DEVICE_IDENTIFICATION, 0, 'device_identification', False),
+    (SettingField.UFCS, 1, 'ufcs', True),
+])
+def test_acknowledged_write_values(
+        field: SettingField, value: int, attribute: str,
+        expected: object) -> None:
+    settings = DeviceSettings()
+    settings.apply(ValueUpdate(field, value))
+    assert getattr(settings, attribute) == expected

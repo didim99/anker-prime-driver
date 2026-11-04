@@ -70,12 +70,20 @@ THEME_PICTURE_CODES = (3, 5)
 
 
 class SettingField(StrEnum):
-    """Single-value setting carried by a ``ValueUpdate``."""
+    """Single-value setting carried by a ``ValueUpdate``.
+
+    The last four have no change message; they are only applied after an
+    acknowledged write, until the next snapshot confirms them.
+    """
 
     BRIGHTNESS = 'brightness'
     ERROR_CODE = 'error_code'
     KNOB_DIRECTION = 'knob_direction'
     SCREEN_TIMEOUT = 'screen_timeout'
+    HOUR_FORMAT = 'hour_format'
+    MAX_COMPATIBILITY = 'max_compatibility'
+    DEVICE_IDENTIFICATION = 'device_identification'
+    UFCS = 'ufcs'
 
 
 class Capabilities(IntFlag):
@@ -295,6 +303,9 @@ class ClockState:
 
     def set_theme_url(self, theme_url: str | None) -> None:
         self._theme_url = theme_url
+
+    def set_showing_holiday(self, showing_holiday: bool | None) -> None:
+        self._showing_holiday = showing_holiday
 
     @classmethod
     def from_flags(cls, flags: int, *, theme_id: int | None = None,
@@ -897,6 +908,24 @@ class DeviceSettings:
         bit = 1 << (GROUPS.index(output) + 1)
         return bool((self._error_code or 0) & bit)
 
+    def keep_theme_details(self, previous: DeviceSettings) -> None:
+        """Carry over what only the ``0x0A02`` theme status reports.
+
+        A snapshot lacks the theme URL, the holiday display and the custom
+        picture time display; the URL is kept while the theme is unchanged.
+        """
+
+        if self._image_time_display is None:
+            self._image_time_display = previous.image_time_display
+        clock = self._clock
+        old = previous.clock
+        if clock is None or old is None:
+            return
+        current = (clock.theme_code, clock.theme_id)
+        if current == (old.theme_code, old.theme_id):
+            clock.set_theme_url(old.theme_url)
+        clock.set_showing_holiday(old.showing_holiday)
+
     def apply(self, update: SettingsUpdate) -> None:
         """Merge one change; fields the change does not carry are kept."""
 
@@ -992,6 +1021,14 @@ class DeviceSettings:
             self._knob_direction = update.value
         elif update.field == SettingField.SCREEN_TIMEOUT:
             self._screen_timeout = update.value
+        elif update.field == SettingField.HOUR_FORMAT:
+            self._hour_format = update.value
+        elif update.field == SettingField.MAX_COMPATIBILITY:
+            self._max_compatibility = bool(update.value)
+        elif update.field == SettingField.DEVICE_IDENTIFICATION:
+            self._device_identification = bool(update.value)
+        elif update.field == SettingField.UFCS:
+            self._ufcs = bool(update.value)
 
     def _apply_clock(self, update: ClockUpdate) -> None:
         clock = update.clock

@@ -29,7 +29,7 @@ classifiers = [
 # Lower bounds only: the library must coexist with Home Assistant's own pins.
 dependencies = [
     "aiohttp>=3.9",
-    "aiomqtt>=2.3",
+    "aiomqtt>=2.5",
     "cryptography>=42",
 ]
 

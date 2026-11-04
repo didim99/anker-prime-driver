@@ -6,6 +6,7 @@ block; async callers run them in an executor.
 """
 
 import ssl
+import tempfile
 from pathlib import Path
 
 from ankerprime.cloud.client import MqttCredentials
@@ -39,3 +40,26 @@ def create_tls_context(certificate: Path, private_key: Path) -> ssl.SSLContext:
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certificate, private_key)
     return context
+
+
+def load_tls_context(credentials: MqttCredentials,
+                     directory: Path | None = None) -> ssl.SSLContext:
+    """Build the TLS context and remove the identity files right after.
+
+    The context keeps the identity in memory, so the files only exist while
+    it loads. Without a directory a private temporary one is used.
+    """
+
+    if directory is None:
+        with tempfile.TemporaryDirectory(prefix='ankerprime-') as temporary:
+            return _load_and_remove(credentials, Path(temporary))
+    return _load_and_remove(credentials, directory)
+
+
+def _load_and_remove(credentials: MqttCredentials,
+                     directory: Path) -> ssl.SSLContext:
+    try:
+        return create_tls_context(*write_credential_files(credentials,
+                                                          directory))
+    finally:
+        remove_credential_files(directory)

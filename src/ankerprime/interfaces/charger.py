@@ -13,6 +13,7 @@ from ankerprime.model.capabilities import Capability
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, DisplayLanguage, FixedAllocation, HourFormat,
     KnobDirection, OutputId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
+from ankerprime.model.errors import AnkerPrimeError
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
 
@@ -36,6 +37,16 @@ class Charger(ABC):
 
         pass
 
+    @property
+    @abstractmethod
+    def last_error(self) -> AnkerPrimeError | None:
+        """Error that stopped reconnecting; None while connecting or connected.
+
+        An ``AuthenticationError`` here means new credentials are needed.
+        """
+
+        pass
+
     @abstractmethod
     def supports(self, capability: Capability) -> bool:
         """Check that the capability is usable on this unit."""
@@ -50,7 +61,11 @@ class Charger(ABC):
 
     @abstractmethod
     async def connect(self) -> None:
-        """Connect and keep the connection alive until ``disconnect``."""
+        """Connect and keep the connection alive until ``disconnect``.
+
+        Raises when the first attempt fails; later losses are retried in the
+        background with growing delays.
+        """
 
         pass
 

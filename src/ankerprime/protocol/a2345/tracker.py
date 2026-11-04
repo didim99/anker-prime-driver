@@ -74,6 +74,8 @@ class StateTracker:
             self._ports.update(message.ports)
         elif isinstance(message, StatusSnapshot):
             self._ports.update(message.ports)
+            if self._settings is not None:
+                message.settings.keep_theme_details(self._settings)
             self._settings = message.settings
             self._control_times = dict.fromkeys(message.settings.outputs,
                                                 received_at)
