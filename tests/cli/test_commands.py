@@ -22,6 +22,13 @@ from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt
 from tests.utils import no_tls
 
 
+class Terminal(io.StringIO):
+    """Output stream that claims to be a terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
 class Cli:
     """Runs the CLI against one fake cloud and broker."""
 
@@ -49,8 +56,8 @@ class Cli:
     def authentication(self) -> Authentication | None:
         return asyncio.run(CliConfig(self._config_dir).authentication())
 
-    def run(self, *argv: str) -> tuple[int, str]:
-        out = io.StringIO()
+    def run(self, *argv: str, tty: bool = False) -> tuple[int, str]:
+        out = Terminal() if tty else io.StringIO()
         code = main(['--config-dir', str(self._config_dir), *argv],
                     http_factory=self._http, connector=self._connector,
                     tls_factory=no_tls, out=out)
@@ -166,6 +173,22 @@ def test_monitor_prints_requested_count(tmp_path: Path,
     assert all(json.loads(line)['available'] for line in lines)
 
 
+@pytest.mark.parametrize(('detail', 'shows_settings'), [
+    ((), False), (('--detail',), True),
+])
+def test_monitor_redraws_in_place_on_a_terminal(
+        cli: Cli, detail: tuple[str, ...], shows_settings: bool) -> None:
+    cli.login()
+    code, out = cli.run('monitor', '--count', '2', '--interval', '0',
+                        *detail, tty=True)
+    assert code == 0
+    assert out.startswith('\x1b[?25l\x1b[J') and out.endswith('\x1b[?25h')
+    views = out.split('F\x1b[J')
+    assert len(views) == 2
+    assert all('Updated ' in view and 'C1 ' in view for view in views)
+    assert ('Mode:' in out) is shows_settings
+
+
 def test_verified_write_prints_confirmation_only(cli: Cli) -> None:
     cli.login()
     code, out = cli.run('output', 'c1', 'on')
@@ -178,10 +201,17 @@ def test_verified_write_prints_confirmation_only(cli: Cli) -> None:
 
 def test_experimental_write_asks_for_verification(cli: Cli) -> None:
     cli.login()
+    code, out = cli.run('switch', 'max-compatibility', 'on')
+    assert code == 0
+    assert 'max-compatibility switched on.' in out
+    assert 'max_compatibility is not yet verified' in out
+
+
+def test_countdown_start_and_cancel(cli: Cli) -> None:
+    cli.login()
     code, out = cli.run('countdown', 'usb-a', '15m')
     assert code == 0
-    assert 'usb_a switches off in 900 s.' in out
-    assert 'output_countdown is not yet verified' in out
+    assert out.strip() == 'usb_a switches off in 900 s.'
     code, out = cli.run('countdown', 'c2', 'cancel')
     assert code == 0 and 'c2 countdown cancelled.' in out
 

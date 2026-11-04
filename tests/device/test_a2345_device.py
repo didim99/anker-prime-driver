@@ -190,6 +190,29 @@ async def test_firmware_change_rereads_settings(
     await wait_until(lambda: SNAPSHOT_REQUEST in channel.sent_types())
 
 
+async def test_ack_for_another_client_rereads_settings(
+        device: A2345Device, channel: FakeChannel) -> None:
+    await connected(device)
+    channel.clear()
+    channel.deliver(charger_frame(0x0A07, [(0xA1, b'\x34')], increment=0))
+    await wait_until(lambda: channel.sent_types()[:2] == [SNAPSHOT_REQUEST,
+                                                          THEME_REQUEST])
+
+
+async def test_settings_are_reread_periodically(channel: FakeChannel) -> None:
+    timings = A2345Timings(realtime_refresh=0.05, settings_refresh=0.1,
+                           tick=0.01)
+    device = A2345Device(channel, timings=timings)
+    try:
+        await connected(device)
+        channel.clear()
+        await wait_until(lambda: SNAPSHOT_REQUEST in channel.sent_types())
+        channel.clear()
+        await wait_until(lambda: SNAPSHOT_REQUEST in channel.sent_types())
+    finally:
+        await device.disconnect()
+
+
 async def test_theme_status_survives_snapshot(device: A2345Device,
                                               channel: FakeChannel) -> None:
     await connected(device)

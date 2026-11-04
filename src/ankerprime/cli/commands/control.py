@@ -203,16 +203,16 @@ class DisplayCommand(ControlCommand):
                             type=enum_converter(ScreenTimeout),
                             help=_choices(ScreenTimeout))
         parser.add_argument('--knob', type=enum_converter(KnobDirection),
-                            help=_choices(KnobDirection))
+                            help=_choices(KnobDirection) + ' (250W)')
         parser.add_argument('--hours', type=enum_converter(HourFormat),
-                            help=_choices(HourFormat))
+                            help=_choices(HourFormat) + ' (250W)')
         parser.add_argument('--orientation',
                             type=enum_converter(ScreenOrientation),
-                            help=_choices(ScreenOrientation))
+                            help=_choices(ScreenOrientation) + ' (160W)')
         parser.add_argument('--auto-rotation', type=parse_switch,
-                            help='on or off')
+                            help='on or off (160W)')
         parser.add_argument('--language', type=enum_converter(DisplayLanguage),
-                            help=_choices(DisplayLanguage))
+                            help=_choices(DisplayLanguage) + ' (160W)')
 
     async def _apply_rotation(self, charger: Charger, args: argparse.Namespace
                               ) -> list[tuple[Capability, str]]:

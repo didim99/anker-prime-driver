@@ -5,6 +5,11 @@ a realtime window, and renews that window before it expires. Readings go
 stale without telemetry; a silent connection is recycled. Writes wait for
 their acknowledgement, resend once like the official app and are followed by
 a debounced snapshot read.
+
+Telemetry carries port readings only: output switches, countdowns and other
+settings changed elsewhere (another client, the app, the knob) are not pushed
+over the cloud. They are picked up by a snapshot read after an acknowledgement
+meant for another client, and by a periodic snapshot read.
 """
 
 from __future__ import annotations
@@ -57,6 +62,7 @@ class A2345Timings:
     _stale_after: float
     _telemetry_deadline: float
     _settings_retry: float
+    _settings_refresh: float | None
     _readback_delay: float
     _retry_initial: float
     _retry_max: float
@@ -66,7 +72,9 @@ class A2345Timings:
 
     def __init__(self, *, realtime_refresh: float = 8.0,
                  stale_after: float = 15.0, telemetry_deadline: float = 45.0,
-                 settings_retry: float = 10.0, readback_delay: float = 0.8,
+                 settings_retry: float = 10.0,
+                 settings_refresh: float | None = 30.0,
+                 readback_delay: float = 0.8,
                  retry_initial: float = 1.0, retry_max: float = 60.0,
                  tick: float = 1.0,
                  write_waits: Sequence[float] = (1.5, 3.0),
@@ -75,6 +83,7 @@ class A2345Timings:
         self._stale_after = stale_after
         self._telemetry_deadline = telemetry_deadline
         self._settings_retry = settings_retry
+        self._settings_refresh = settings_refresh
         self._readback_delay = readback_delay
         self._retry_initial = retry_initial
         self._retry_max = retry_max
@@ -103,6 +112,12 @@ class A2345Timings:
         """Minimum gap between repeated snapshot requests."""
 
         return self._settings_retry
+
+    @property
+    def settings_refresh(self) -> float | None:
+        """Snapshot read period for changes made elsewhere (``None``: off)."""
+
+        return self._settings_refresh
 
     @property
     def readback_delay(self) -> float:
@@ -184,6 +199,7 @@ class A2345Device(BaseCharger, ChannelListener):
     _last_telemetry: float | None
     _last_trigger: float
     _settings_requested_at: float
+    _settings_received_at: float
     _settings_fresh: bool
 
     _pending: list[_PendingWrite]
@@ -210,6 +226,7 @@ class A2345Device(BaseCharger, ChannelListener):
         self._last_telemetry = None
         self._last_trigger = 0.0
         self._settings_requested_at = 0.0
+        self._settings_received_at = 0.0
         self._settings_fresh = False
         self._pending = []
         self._write_locks = {}
@@ -458,6 +475,8 @@ class A2345Device(BaseCharger, ChannelListener):
             if fresh != self._available:
                 self._available = fresh
                 self._publish_state()
+            if self._settings_due(now):
+                self._spawn(self._request_settings())
             if now - self._last_trigger >= timings.realtime_refresh:
                 self._last_trigger = now
                 try:
@@ -473,11 +492,21 @@ class A2345Device(BaseCharger, ChannelListener):
         self._available = True
         if isinstance(message, StatusSnapshot):
             self._settings_fresh = True
+            self._settings_received_at = now
             return
         # The snapshot reply can be lost; without it no write is possible.
         waited = now - self._settings_requested_at
         if not self._settings_fresh and waited >= self._timings.settings_retry:
             self._spawn(self._request_settings())
+
+    def _settings_due(self, now: float) -> bool:
+        """Whether the periodic snapshot read is due."""
+
+        period = self._timings.settings_refresh
+        if period is None or not self._settings_fresh:
+            return False
+        last = max(self._settings_received_at, self._settings_requested_at)
+        return now - last >= period
 
     async def _request_settings(self) -> None:
         self._settings_requested_at = _monotonic()
@@ -531,6 +560,9 @@ class A2345Device(BaseCharger, ChannelListener):
             if not pending.future.done() and pending.command.matches(ack):
                 pending.future.set_result(ack)
                 return
+        # Acks reach every client; another one changed something.
+        if self._channel.is_open and not ack.rejected:
+            self._schedule_readback(include_theme=True)
 
     def _schedule_readback(self, include_theme: bool) -> None:
         """Read the snapshot once a burst of writes settles."""

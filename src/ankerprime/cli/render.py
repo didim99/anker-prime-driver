@@ -38,10 +38,20 @@ def render_devices(devices: Sequence[BoundDevice]) -> str:
 
 
 def render_state(state: ChargerState, now: datetime) -> str:
-    """Multi-line summary of everything the charger reported."""
+    """Multi-line summary of everything the charger reported.
 
-    sections = [_header(state), _ports(state), _outputs(state, now),
+    Times are shown in the time zone of ``now``.
+    """
+
+    sections = [_header(state, now), _ports(state), _outputs(state, now),
                 _settings(state)]
+    return '\n\n'.join(section for section in sections if section)
+
+
+def render_readings(state: ChargerState, now: datetime) -> str:
+    """The header and the port table only."""
+
+    sections = [_header(state, now), _ports(state)]
     return '\n\n'.join(section for section in sections if section)
 
 
@@ -54,6 +64,14 @@ def format_days(days: Weekday) -> str:
                     if days & (1 << index))
 
 
+def format_age(seconds: float) -> str:
+    """Compact elapsed time: ``5 s``, ``2:05``, ``1:02:05``."""
+
+    if seconds < 60:
+        return f'{max(int(seconds), 0)} s'
+    return format_duration(seconds)
+
+
 def format_duration(seconds: float) -> str:
     seconds = max(int(seconds), 0)
     hours, rest = divmod(seconds, 3600)
@@ -63,19 +81,28 @@ def format_duration(seconds: float) -> str:
     return f'{minutes}:{seconds:02d}'
 
 
-def _header(state: ChargerState) -> str:
+def _header(state: ChargerState, now: datetime) -> str:
     info = state.info
     name = info.name or state.product.name
     parts = [f'{name} ({state.product.code})']
     if info.firmware_version:
         parts.append(f'firmware {info.firmware_version}')
-    parts.append('live' if state.available else 'not live')
-    lines = [' · '.join(parts), f'Total power {state.total_power:.2f} W']
+    parts.append('live' if state.available else 'NOT LIVE')
+    lines = [' · '.join(parts), _updated(state.updated_at, now),
+             f'Total power {state.total_power:.2f} W']
     if state.over_temperature:
         lines.append('WARNING: over-temperature protection active')
     if state.energy:
         lines[-1] += f' · energy {state.total_energy:.3f} Wh'
     return '\n'.join(lines)
+
+
+def _updated(updated_at: datetime | None, now: datetime) -> str:
+    if updated_at is None:
+        return 'Updated never'
+    local = updated_at.astimezone(now.tzinfo)
+    age = format_age((now - updated_at).total_seconds())
+    return f'Updated {local:%H:%M:%S} ({age} ago)'
 
 
 def _ports(state: ChargerState) -> str:

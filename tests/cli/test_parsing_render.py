@@ -1,6 +1,7 @@
 """CLI argument converters, rendering and state serialisation tests."""
 
 import argparse
+import io
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -10,7 +11,9 @@ from ankerprime.cli.parsing import (
     enum_converter, parse_countdown, parse_days,
     parse_duration, parse_output, parse_switch, parse_time)
 from ankerprime.cli.render import (
-    format_days, format_duration, render_devices, render_state, render_table)
+    format_age, format_days, format_duration,
+    render_devices, render_readings, render_state, render_table)
+from ankerprime.cli.terminal import TerminalBlock
 from ankerprime.cloud.client import BoundDevice
 from ankerprime.model import ChargingMode, OutputId, ScreenTimeout, Weekday
 from ankerprime.model.serialize import state_to_dict
@@ -93,6 +96,13 @@ def test_format_duration(seconds: float, text: str) -> None:
     assert format_duration(seconds) == text
 
 
+@pytest.mark.parametrize(('seconds', 'text'), [
+    (0.4, '0 s'), (59.9, '59 s'), (125, '2:05'), (3725, '1:02:05'),
+])
+def test_format_age(seconds: float, text: str) -> None:
+    assert format_age(seconds) == text
+
+
 def test_render_table_aligns_columns() -> None:
     table = render_table(('A', 'Long header'), [('wide cell', 'x')])
     assert table.splitlines() == ['A          Long header',
@@ -114,7 +124,8 @@ def test_render_state() -> None:
     text = render_state(tracker.build(available=True),
                         NOW + timedelta(seconds=60))
     assert 'Anker Prime Charger 250W (A2345)' in text
-    assert 'firmware 2.1.1.2' in text and 'live' in text
+    assert 'firmware 2.1.1.2 · live' in text
+    assert 'Updated 12:00:00 (1:00 ago)' in text
     assert 'C1    off     charging' in text
     assert '5a, huawei_scp, huawei_honor' in text
     assert 'C2: off in 9:00' in text
@@ -123,6 +134,26 @@ def test_render_state() -> None:
     assert 'brightness 20%' in text and 'timeout 30s' in text
     assert 'Clock: off, style_2, holiday off, 08:00-23:00 daily' in text
     assert 'Switches: max compatibility off' in text
+
+
+def test_render_readings_shows_ports_only() -> None:
+    tracker = snapshot_state()
+    text = render_readings(tracker.build(available=False),
+                           NOW + timedelta(seconds=5))
+    assert 'NOT LIVE' in text and 'Updated 12:00:00 (5 s ago)' in text
+    assert 'C1    off     charging' in text
+    assert 'Outputs' not in text and 'Mode:' not in text
+    assert render_readings(StateTracker().build(available=False),
+                           NOW).splitlines()[1] == 'Updated never'
+
+
+def test_terminal_block_replaces_its_lines() -> None:
+    out = io.StringIO()
+    with TerminalBlock(out) as block:
+        block.show('one\ntwo')
+        block.show('three')
+    assert out.getvalue() == ('\x1b[?25l\x1b[Jone\ntwo\n'
+                              '\x1b[2F\x1b[Jthree\n\x1b[?25h')
 
 
 def test_state_to_dict_is_json_ready() -> None:

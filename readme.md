@@ -42,7 +42,8 @@ ankerprime login you@example.com DE    # asks for the password
 ankerprime logout
 ankerprime devices                     # chargers bound to the account
 ankerprime status                      # full state once (--json for JSON)
-ankerprime monitor                     # live readings until Ctrl+C
+ankerprime monitor                     # live port readings until Ctrl+C
+ankerprime monitor --detail            # same, with outputs and settings
 ```
 
 Changing settings:
