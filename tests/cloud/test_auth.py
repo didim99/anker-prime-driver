@@ -13,6 +13,7 @@ from ankerprime.model import (
     AuthenticationError, ChargerConnectionError,
     InvalidParameterError, ProtocolError)
 from tests.cloud.fakes import FakeHttpClient, Request, json_response
+from tests.utils import make_authentication
 
 
 NOW = datetime(2026, 11, 4, 12, 0, tzinfo=UTC)
@@ -153,20 +154,18 @@ def test_gmt_offset_format() -> None:
     assert text.startswith('GMT') and len(text) == 9 and text[6] == ':'
 
 
-def make_auth() -> Authentication:
-    return Authentication(user_id=USER_ID, auth_token='test-token',
-                          expires_at=datetime.fromtimestamp(EXPIRY, UTC),
-                          country='jp', server=EU_SERVER, nickname='tester')
+def make_tester() -> Authentication:
+    return make_authentication(USER_ID, country='jp', nickname='tester')
 
 
 def test_authentication_validity() -> None:
-    auth = make_auth()
+    auth = make_tester()
     assert auth.is_valid(NOW)
     assert not auth.is_valid(auth.expires_at - timedelta(seconds=30))
 
 
 def test_authentication_document_round_trip() -> None:
-    auth = make_auth()
+    auth = make_tester()
     document = auth.to_document()
     assert 'password' not in document
     assert Authentication.from_document(document) == auth
@@ -178,7 +177,7 @@ def test_authentication_document_round_trip() -> None:
 ])
 def test_tampered_authentication_document_is_rejected(
         change: dict[str, object]) -> None:
-    document = make_auth().to_document()
+    document = make_tester().to_document()
     document.update(change)
     if change == {'user_id': None}:
         del document['user_id']
@@ -186,7 +185,7 @@ def test_tampered_authentication_document_is_rejected(
 
 
 def test_reprs_hide_secrets() -> None:
-    assert 'test-token' not in repr(make_auth())
+    assert 'test-token' not in repr(make_tester())
     credentials = AccountCredentials(' a@b.com ', 'secret', 'jp')
     assert 'secret' not in repr(credentials)
     assert (credentials.email, credentials.country) == ('a@b.com', 'JP')

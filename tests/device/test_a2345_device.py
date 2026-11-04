@@ -12,9 +12,10 @@ from ankerprime.model import (
     HourFormat, InvalidParameterError, OutputId, PortId, Schedule,
     ScheduleSlot, UnsupportedCapabilityError, Weekday, WriteRejectedError)
 from tests.device.charger import (
-    FakeChannel, charger_frame, charger_responder, firmware_change, wait_until)
+    FakeChannel, charger_frame, charger_responder, firmware_change)
 from tests.protocol.a2345.fixtures import (
     REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT, THEME_STATUS)
+from tests.utils import wait_until
 
 
 TIMINGS = A2345Timings(realtime_refresh=0.05, stale_after=0.15,

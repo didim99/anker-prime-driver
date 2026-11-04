@@ -13,7 +13,6 @@ import logging
 import random
 import ssl
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 from pathlib import Path
 
 from ankerprime.cloud.client import BoundDevice, MqttCredentials
@@ -24,7 +23,7 @@ from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.interfaces.mqtt import (
     MqttConnection, MqttConnector, MqttEndpoint, MqttMessage)
 from ankerprime.model.errors import ChargerConnectionError
-from ankerprime.redact import redact
+from ankerprime.utils import Clock, redact, utc_now
 
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,6 @@ KEEPALIVE = 60
 
 CredentialsProvider = Callable[[], Awaitable[MqttCredentials]]
 TlsFactory = Callable[[MqttCredentials], Awaitable[ssl.SSLContext | None]]
-Clock = Callable[[], datetime]
 
 
 class CloudChannel(Channel):
@@ -154,7 +152,7 @@ class CloudMqttSession:
         self._credentials_provider = credentials_provider
         self._connector = connector
         self._tls_factory = tls_factory or _file_tls_factory(tls_directory)
-        self._clock = clock or _utc_now
+        self._clock = clock or utc_now
         self._port = port
         self._keepalive = keepalive
         self._lock = asyncio.Lock()
@@ -299,7 +297,3 @@ def _file_tls_factory(directory: Path | None) -> TlsFactory:
                                        directory)
 
     return factory
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)

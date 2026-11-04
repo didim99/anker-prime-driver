@@ -13,12 +13,12 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding, NoEncryption, PrivateFormat)
 from cryptography.x509.oid import NameOID
 
-from ankerprime.cloud.client import MqttCredentials
 from ankerprime.cloud.credential_files import (
     create_tls_context, remove_credential_files, write_credential_files)
 from ankerprime.model import InvalidParameterError, ProtocolError
 from ankerprime.storage.files import write_private_file
 from ankerprime.storage.json_store import JsonFileStore
+from tests.utils import make_mqtt_credentials
 
 
 def mode(path: Path) -> int:
@@ -60,11 +60,9 @@ async def test_json_store_reports_corrupt_documents(tmp_path: Path) -> None:
 
 
 def test_credential_files(tmp_path: Path) -> None:
-    credentials = MqttCredentials(user_id='user', app_name='anker_power',
-                                  thing_name='thing',
-                                  certificate_id='certificate',
-                                  endpoint='host', certificate_pem='CERT\n',
-                                  private_key_pem='KEY\n')
+    credentials = make_mqtt_credentials(endpoint='host',
+                                        certificate_pem='CERT\n',
+                                        private_key_pem='KEY\n')
     certificate, key = write_credential_files(credentials, tmp_path / 'mqtt')
     assert certificate.read_text() == 'CERT\n'
     assert key.read_text() == 'KEY\n'
@@ -95,12 +93,9 @@ def test_tls_context_loads_generated_identity(tmp_path: Path) -> None:
     key_pem = key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL,
                                 NoEncryption()).decode()
     certificate_pem = certificate.public_bytes(Encoding.PEM).decode()
-    credentials = MqttCredentials(user_id='user', app_name='anker_power',
-                                  thing_name='thing',
-                                  certificate_id='certificate',
-                                  endpoint='host',
-                                  certificate_pem=certificate_pem,
-                                  private_key_pem=key_pem)
+    credentials = make_mqtt_credentials(endpoint='host',
+                                        certificate_pem=certificate_pem,
+                                        private_key_pem=key_pem)
     paths = write_credential_files(credentials, tmp_path)
     context = create_tls_context(*paths)
     assert context.minimum_version == ssl.TLSVersion.TLSv1_2

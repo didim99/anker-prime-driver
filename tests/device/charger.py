@@ -144,12 +144,3 @@ class FakeChannel(Channel):
     def _reply(self, data: bytes) -> None:
         if self._open and self._listener is not None:
             self._listener.on_message(data)
-
-
-async def wait_until(predicate: Callable[[], bool],
-                     timeout: float = 2.0) -> None:
-    """Poll until the predicate holds; fail the test on timeout."""
-
-    async with asyncio.timeout(timeout):
-        while not predicate():
-            await asyncio.sleep(0.005)

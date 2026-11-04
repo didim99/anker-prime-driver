@@ -19,6 +19,7 @@ from enum import StrEnum
 from functools import reduce
 
 from ankerprime.model.errors import ProtocolError
+from ankerprime.utils import u32le
 
 
 HEADER = b'\xff\x09'
@@ -346,7 +347,7 @@ def encode_request(message_type: int, fields: Mapping[int, bytes], *,
         body.append(_value_type(len(value)))
         body += value
     body += bytes((TAG_TIMESTAMP, 5, VALUE_TYPE_U32))
-    body += (timestamp & 0xFFFFFFFF).to_bytes(4, 'little')
+    body += u32le(timestamp)
     body[2:4] = (len(body) + 1).to_bytes(2, 'little')
     body.append(checksum(body))
     return bytes(body)

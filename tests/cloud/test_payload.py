@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from ankerprime.cloud.client import BoundDevice, MqttCredentials
+from ankerprime.cloud.client import BoundDevice
 from ankerprime.cloud.payload import (
     MAX_BASE64_CHARACTERS, MAX_INPUT_BYTES, MAX_JSON_DEPTH, CommandEnvelope,
     PayloadError, PayloadErrorKind, extract_frame, topic_belongs_to)
@@ -14,6 +14,7 @@ from ankerprime.model import InvalidParameterError, OutputId
 from ankerprime.protocol.a2345 import commands
 from tests.protocol.a2345.fixtures import (
     REALTIME_ACKNOWLEDGEMENT, REQUEST_EPOCH, VERSION_INFO)
+from tests.utils import make_mqtt_credentials
 
 
 ACK_BASE64 = base64.b64encode(REALTIME_ACKNOWLEDGEMENT).decode()
@@ -30,11 +31,7 @@ def payload_error(payload: bytes) -> PayloadErrorKind:
 
 
 def make_envelope(owner: str | None = 'owner') -> CommandEnvelope:
-    credentials = MqttCredentials(user_id='user', app_name='anker_power',
-                                  thing_name='thing',
-                                  certificate_id='certificate',
-                                  endpoint='aiot-mqtt-eu.anker.com',
-                                  certificate_pem='', private_key_pem='')
+    credentials = make_mqtt_credentials()
     device = BoundDevice('SERIAL123', 'A2345', owner_user_id=owner)
     return CommandEnvelope(credentials, device)
 

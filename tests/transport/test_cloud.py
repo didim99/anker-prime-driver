@@ -2,7 +2,6 @@
 
 import base64
 import json
-import ssl
 from collections.abc import AsyncIterator
 
 import pytest
@@ -12,10 +11,10 @@ from ankerprime.interfaces.channel import ChannelListener
 from ankerprime.model import AuthenticationError, ChargerConnectionError
 from ankerprime.protocol.a2345 import commands
 from ankerprime.transport.cloud import CloudMqttSession
-from tests.device.charger import wait_until
 from tests.protocol.a2345.fixtures import (
     REALTIME_ACKNOWLEDGEMENT, REQUEST_EPOCH, VERSION_INFO)
 from tests.transport.fakes import FakeMqttConnector
+from tests.utils import make_mqtt_credentials, no_tls, wait_until
 
 
 DEVICE_A = BoundDevice('SERIAL123', 'A2345', owner_user_id='owner')
@@ -70,15 +69,7 @@ class CredentialSource:
         self._fetches += 1
         if self._error is not None:
             raise self._error
-        return MqttCredentials(user_id='user', app_name='anker_power',
-                               thing_name='thing',
-                               certificate_id='certificate',
-                               endpoint='aiot-mqtt-eu.anker.com',
-                               certificate_pem='', private_key_pem='')
-
-
-async def no_tls(credentials: MqttCredentials) -> ssl.SSLContext | None:
-    return None
+        return make_mqtt_credentials()
 
 
 @pytest.fixture

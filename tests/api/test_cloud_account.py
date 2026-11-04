@@ -2,7 +2,6 @@
 
 import base64
 import json
-import ssl
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -10,16 +9,16 @@ import pytest
 
 from ankerprime.api import CloudAccount
 from ankerprime.cloud.auth import AccountCredentials, Authentication
-from ankerprime.cloud.client import BoundDevice, MqttCredentials
+from ankerprime.cloud.client import BoundDevice
 from ankerprime.cloud.regions import EU_SERVER
 from ankerprime.device.a2345 import A2345Timings
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
     AuthenticationError, OutputId, ProductCode, UnknownProductError)
 from tests.cloud.fakes import FakeHttpClient, Request, json_response
-from tests.device.charger import wait_until
 from tests.protocol.a2345.fixtures import STATUS_SNAPSHOT
 from tests.transport.fakes import FakeMqttConnector
+from tests.utils import no_tls, wait_until
 
 
 NOW = datetime.fromtimestamp(1_900_000_000, UTC)
@@ -83,10 +82,6 @@ class CloudServer:
         return json_response({'code': 0, 'data': {
             'user_id': 'u' * 40, 'auth_token': token,
             'token_expires_at': 2_000_000_000}})
-
-
-async def no_tls(credentials: MqttCredentials) -> ssl.SSLContext | None:
-    return None
 
 
 async def make_account(server: CloudServer,

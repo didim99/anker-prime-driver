@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Collection, Coroutine, Sequence
+from collections.abc import Collection, Coroutine, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from ankerprime.device.base import BaseCharger
@@ -42,12 +41,11 @@ from ankerprime.protocol.a2345.settings import (
     PriorityUpdate, ScheduleUpdate, SettingField, SettingsChange,
     SettingsUpdate, ValueUpdate, WriteAcknowledgement)
 from ankerprime.protocol.a2345.tracker import StateTracker
-from ankerprime.redact import redact
+from ankerprime.utils import Clock, redact, utc_now
 
 
 logger = logging.getLogger(__name__)
 
-Clock = Callable[[], datetime]
 WriteKey = tuple[int, OutputId | None, ScheduleSlot | None]
 
 
@@ -198,7 +196,7 @@ class A2345Device(BaseCharger, ChannelListener):
         self._channel = channel
         self._info = info or DeviceInfo()
         self._timings = timings or A2345Timings()
-        self._clock = clock or _utc_now
+        self._clock = clock or utc_now
         self._tracker = StateTracker(A2345)
         self._available = False
         self._supervisor = None
@@ -579,7 +577,3 @@ async def _quietly(coroutine: Coroutine[Any, Any, None]) -> None:
 
 def _monotonic() -> float:
     return asyncio.get_running_loop().time()
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)

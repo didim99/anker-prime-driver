@@ -7,8 +7,6 @@ an embedder stores it for automatic re-login is its own decision.
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +19,7 @@ from ankerprime.interfaces.storage import JsonDocument
 from ankerprime.model.errors import (
     AuthenticationError, ChargerConnectionError,
     InvalidParameterError, ProtocolError)
+from ankerprime.utils import Clock, parse_json_object, utc_now
 
 
 LOGIN_PATH = '/passport/login'
@@ -162,12 +161,12 @@ class AccountClient:
     """Signs in with email and password."""
 
     _http: HttpClient
-    _clock: Callable[[], datetime]
+    _clock: Clock
 
     def __init__(self, http: HttpClient,
-                 clock: Callable[[], datetime] | None = None):
+                 clock: Clock | None = None):
         self._http = http
-        self._clock = clock or _now
+        self._clock = clock or utc_now
 
     async def login(self, email: str, password: str,
                     country: str) -> Authentication:
@@ -208,7 +207,7 @@ class AccountClient:
         response = await self._http.post(server + LOGIN_PATH, headers, body)
         if not 200 <= response.status < 300:
             raise ChargerConnectionError(f'login HTTP {response.status}')
-        root = _parse_json(response.body)
+        root = parse_json_object(response.body)
         code = root.get('code', -1)
         if code != 0:
             message = root.get('msg') or ''
@@ -251,10 +250,6 @@ def parse_expiration(value: object) -> datetime | None:
     return datetime.fromtimestamp(seconds, UTC)
 
 
-def _now() -> datetime:
-    return datetime.fromtimestamp(time.time(), UTC)
-
-
 def _validate_login(email: str, password: str, country: str) -> None:
     if country in UNSUPPORTED_REGIONS:
         raise InvalidParameterError('mainland China (SMS) login unsupported')
@@ -262,16 +257,6 @@ def _validate_login(email: str, password: str, country: str) -> None:
         raise InvalidParameterError('invalid email address')
     if not password:
         raise InvalidParameterError('empty password')
-
-
-def _parse_json(body: bytes) -> dict[str, Any]:
-    try:
-        root = json.loads(body)
-    except ValueError:
-        raise ProtocolError('malformed JSON from the Anker cloud') from None
-    if not isinstance(root, dict):
-        raise ProtocolError('unexpected JSON from the Anker cloud')
-    return root
 
 
 def _parse_login(data: dict[str, Any], country: str,

@@ -5,15 +5,15 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ankerprime.cloud.auth import Authentication
 from ankerprime.cloud.client import (
-    CERTIFICATE_LABELS, BoundDevice,
-    CloudClient, MqttCredentials, normalize_pem)
+    CERTIFICATE_LABELS, BoundDevice, CloudClient, normalize_pem)
 from ankerprime.cloud.regions import EU_SERVER
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
     AuthenticationError, ChargerConnectionError, ProtocolError)
 from tests.cloud.fakes import FakeHttpClient, json_response
+from tests.utils import (
+    DEFAULT_EXPIRY, make_authentication, make_mqtt_credentials)
 
 
 USER_ID = 'a' * 40
@@ -29,23 +29,10 @@ MQTT_INFO = {
 }
 
 
-def make_auth(expiry: int = 2_000_000_000) -> Authentication:
-    return Authentication(user_id=USER_ID, auth_token='test-token',
-                          expires_at=datetime.fromtimestamp(expiry, UTC),
-                          country='JP', server=EU_SERVER)
-
-
-def make_client(http: FakeHttpClient, expiry: int = 2_000_000_000
-                ) -> CloudClient:
-    return CloudClient(http, make_auth(expiry), lambda: NOW)
-
-
-def make_credentials() -> MqttCredentials:
-    return MqttCredentials(user_id='user', app_name='anker_power',
-                           thing_name='thing', certificate_id='certificate',
-                           endpoint='aiot-mqtt-eu.anker.com',
-                           certificate_pem=CERTIFICATE,
-                           private_key_pem=PRIVATE_KEY)
+def make_client(http: FakeHttpClient,
+                expiry: int = DEFAULT_EXPIRY) -> CloudClient:
+    authentication = make_authentication(USER_ID, expiry=expiry)
+    return CloudClient(http, authentication, lambda: NOW)
 
 
 async def test_bound_devices_use_authenticated_headers_and_filter() -> None:
@@ -117,7 +104,8 @@ async def test_malformed_mqtt_credentials_fail_closed(
 
 
 def test_topics_reject_wildcards_from_server_identity() -> None:
-    credentials = make_credentials()
+    credentials = make_mqtt_credentials(certificate_pem=CERTIFICATE,
+                                        private_key_pem=PRIVATE_KEY)
     with pytest.raises(ProtocolError):
         credentials.subscription_topic(BoundDevice('SERIAL/#', 'A2345'))
     with pytest.raises(ProtocolError):

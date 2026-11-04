@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypeVar
 
@@ -21,13 +20,13 @@ from ankerprime.model.errors import AuthenticationError, UnknownProductError
 from ankerprime.model.state import DeviceInfo
 from ankerprime.transport.aiomqtt_client import AiomqttConnector
 from ankerprime.transport.cloud import CloudMqttSession, TlsFactory
+from ankerprime.utils import Clock, utc_now
 
 
 logger = logging.getLogger(__name__)
 
 ResultT = TypeVar('ResultT')
 
-Clock = Callable[[], datetime]
 AuthenticationListener = Callable[[Authentication], None]
 
 CLOUD_PRODUCTS = frozenset({ProductCode.A2345})
@@ -65,7 +64,7 @@ class CloudAccount:
                  clock: Clock | None = None):
         self._http = http
         self._credentials = credentials
-        self._clock = clock or _utc_now
+        self._clock = clock or utc_now
         self._timings = timings
         self._on_authentication = on_authentication
         self._authentication = authentication
@@ -180,7 +179,3 @@ class CloudAccount:
                    tls_directory=tls_directory,
                    on_authentication=on_authentication, timings=timings,
                    clock=clock)
-
-
-def _utc_now() -> datetime:
-    return datetime.now(UTC)

@@ -22,6 +22,7 @@ from ankerprime.protocol.a2345.frame import CLOUD_SESSION, encode_request
 from ankerprime.protocol.a2345.settings import (
     ACK_PREFIX, CUSTOM_CHARGING_MODE_CODE,
     CustomProfile, PortProtocol, WriteAcknowledgement)
+from ankerprime.utils import u32le
 
 
 MSG_STATUS_SNAPSHOT_REQUEST = 0x0200
@@ -174,7 +175,7 @@ def set_countdown(output: OutputId, enabled: bool, seconds: int) -> Command:
 
     if enabled and not 1 <= seconds <= MAX_COUNTDOWN:
         raise InvalidParameterError(f'countdown out of range: {seconds}')
-    value = _u8(enabled) + (seconds & 0xFFFFFFFF).to_bytes(4, 'little')
+    value = _u8(enabled) + u32le(seconds)
     fields = {0xA2: _u8(group_code(output)), 0xA3: value}
     return Command(MSG_COUNTDOWN, fields, output=output)
 
@@ -276,11 +277,11 @@ def set_clock_theme(clock_on: bool, theme: ClockTheme, *,
     if theme in (ClockTheme.PICTURE, ClockTheme.CUSTOM):
         if theme_id is None:
             raise InvalidParameterError('picture themes need a theme id')
-        fields[0xA3] = _u32(theme_id)
+        fields[0xA3] = u32le(theme_id)
     else:
         fields[0xA3] = b''
-    fields[0xA4] = _u32(image_crc)
-    fields[0xA5] = _u32(text_color)
+    fields[0xA4] = u32le(image_crc)
+    fields[0xA5] = u32le(text_color)
     if custom_url:
         encoded = custom_url.encode('utf-8')
         if len(encoded) > MAX_CUSTOM_URL_LENGTH:
@@ -340,7 +341,3 @@ def _echo_matches(echoed: object | None, expected: object | None) -> bool:
 
 def _u8(value: int) -> bytes:
     return bytes((int(value),))
-
-
-def _u32(value: int) -> bytes:
-    return (value & 0xFFFFFFFF).to_bytes(4, 'little')

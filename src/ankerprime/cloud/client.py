@@ -5,17 +5,16 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
-import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from ankerprime.cloud.auth import Authentication, base_headers
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.model.errors import (
     AuthenticationError, ChargerConnectionError, ProtocolError)
+from ankerprime.utils import Clock, parse_json_object
 
 
 BOUND_DEVICES_PATH = 'power_service/v1/app/get_relate_and_bind_devices'
@@ -194,10 +193,10 @@ class CloudClient:
 
     _http: HttpClient
     _authentication: Authentication
-    _clock: Callable[[], datetime]
+    _clock: Clock
 
     def __init__(self, http: HttpClient, authentication: Authentication,
-                 clock: Callable[[], datetime]):
+                 clock: Clock):
         self._http = http
         self._authentication = authentication
         self._clock = clock
@@ -259,7 +258,7 @@ class CloudClient:
             raise AuthenticationError('Anker token rejected')
         if not 200 <= response.status < 300:
             raise ChargerConnectionError(f'cloud HTTP {response.status}')
-        root = _parse_envelope(response.body)
+        root = parse_json_object(response.body)
         code = root.get('code')
         if code in AUTH_FAILURE_CODES:
             raise AuthenticationError('Anker token rejected')
@@ -306,16 +305,6 @@ def _checked_path(path: str) -> str:
             or '?' in path or '#' in path):
         raise ProtocolError(f'invalid API path: {path}')
     return path
-
-
-def _parse_envelope(body: bytes) -> dict[str, Any]:
-    try:
-        root = json.loads(body)
-    except ValueError:
-        raise ProtocolError('malformed JSON from the Anker cloud') from None
-    if not isinstance(root, dict):
-        raise ProtocolError('unexpected JSON from the Anker cloud')
-    return root
 
 
 def _optional_str(item: Mapping[str, Any], key: str) -> str | None:
