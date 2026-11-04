@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from ankerprime.device.a2345 import A2345Device, A2345Timings
+from ankerprime.energy.store import EnergyStore
 from ankerprime.model import (
     AuthenticationError, Capability, ChargerConnectionError, ChargerState,
     ChargerTimeoutError, ChargingMode, ClockSchedule, ClockTheme, DeviceInfo,
@@ -15,7 +16,7 @@ from tests.device.charger import (
     FakeChannel, charger_frame, charger_responder, firmware_change)
 from tests.protocol.a2345.fixtures import (
     REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT, THEME_STATUS)
-from tests.utils import wait_until
+from tests.utils import MemoryStore, wait_until
 
 
 TIMINGS = A2345Timings(realtime_refresh=0.05, stale_after=0.15,
@@ -389,3 +390,56 @@ async def test_garbage_frames_are_ignored(device: A2345Device,
     channel.deliver(b'\x00\x01\x02')
     channel.deliver(charger_frame(0x7777, [(0xA1, b'\x01')]))
     assert device.state == before
+
+
+def energy_device(channel: FakeChannel, documents: MemoryStore
+                  ) -> A2345Device:
+    timings = A2345Timings(realtime_refresh=10.0, energy_save=0.05,
+                           tick=0.01)
+    store = EnergyStore.for_serial(documents, 'SERIAL123')
+    return A2345Device(channel, DeviceInfo(serial='SERIAL123'),
+                       energy_store=store, timings=timings)
+
+
+async def test_energy_continues_from_store_and_is_saved(
+        channel: FakeChannel) -> None:
+    documents = MemoryStore({'energy-serial123': {
+        'version': 1, 'counters': {'c1': 5.0}}})
+    device = energy_device(channel, documents)
+    try:
+        await connected(device)
+        assert device.state.energy[PortId.C1] == pytest.approx(5.0)
+        assert device.state.energy[PortId.A2] == 0.0
+        for _ in range(3):
+            await asyncio.sleep(0.05)
+            channel.deliver(REALTIME_OLD_FIRMWARE)
+        assert device.state.energy[PortId.C1] > 5.0
+        await wait_until(lambda: documents.saves > 0)
+    finally:
+        await device.disconnect()
+    saved = documents.documents['energy-serial123']['counters']
+    assert saved['c1'] == pytest.approx(device.state.energy[PortId.C1])
+
+
+async def test_energy_store_failures_are_tolerated(
+        channel: FakeChannel, caplog: pytest.LogCaptureFixture) -> None:
+    documents = MemoryStore()
+    documents.fail(OSError('disk gone'))
+    device = energy_device(channel, documents)
+    await connected(device)
+    channel.deliver(REALTIME_OLD_FIRMWARE)
+    await asyncio.sleep(0.05)
+    channel.deliver(REALTIME_OLD_FIRMWARE)
+    await asyncio.sleep(0.1)
+    documents.fail(None)
+    await wait_until(lambda: documents.saves > 0)
+    await device.disconnect()
+    assert 'not loaded' in caplog.text and 'not saved' in caplog.text
+
+
+async def test_unchanged_energy_is_not_saved(channel: FakeChannel) -> None:
+    documents = MemoryStore()
+    device = energy_device(channel, documents)
+    await device.connect()
+    await device.disconnect()
+    assert documents.saves == 0

@@ -65,19 +65,26 @@ class CliContext:
         return self._http_factory()
 
     @asynccontextmanager
-    async def account(self) -> AsyncIterator[CloudAccount]:
-        """The stored account; a refreshed token is saved on exit."""
+    async def account(self, *, save_energy: bool = False
+                      ) -> AsyncIterator[CloudAccount]:
+        """The stored account; a refreshed token is saved on exit.
+
+        Energy counters are loaded from the config folder and saved there
+        only with ``save_energy``.
+        """
 
         authentication = await self._config.authentication()
         if authentication is None:
             raise AuthenticationError('not signed in; run "ankerprime login"')
         credentials = await self._config.credentials()
+        energy_store = self._config.energy_store(save_energy)
         async with self._http_factory() as http:
             account = CloudAccount(http, authentication,
                                    credentials=credentials,
                                    connector=self._connector,
                                    tls_factory=self._tls_factory,
-                                   on_authentication=self._remember)
+                                   on_authentication=self._remember,
+                                   energy_store=energy_store)
             try:
                 yield account
             finally:
@@ -85,11 +92,11 @@ class CliContext:
                 await self._save_new_authentication()
 
     @asynccontextmanager
-    async def charger(self, serial: str | None,
-                      timeout: float) -> AsyncIterator[Charger]:
+    async def charger(self, serial: str | None, timeout: float, *,
+                      save_energy: bool = False) -> AsyncIterator[Charger]:
         """A connected charger whose full state has arrived."""
 
-        async with self.account() as account:
+        async with self.account(save_energy=save_energy) as account:
             devices = await account.bound_devices()
             device = select_device(devices, serial)
             charger = account.charger(device)
@@ -128,9 +135,12 @@ class Command(ABC):
 class ChargerCommand(Command):
     """A command working on one connected charger."""
 
+    SAVES_ENERGY: ClassVar[bool] = False
+
     async def run(self, context: CliContext,
                   args: argparse.Namespace) -> int:
-        async with context.charger(args.serial, args.timeout) as charger:
+        async with context.charger(args.serial, args.timeout,
+                                   save_energy=self.SAVES_ENERGY) as charger:
             return await self.run_charger(context, charger, args)
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:

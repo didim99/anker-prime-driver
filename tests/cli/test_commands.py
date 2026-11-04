@@ -172,6 +172,16 @@ def test_monitor_prints_requested_count(tmp_path: Path,
     lines = out.strip().splitlines()
     assert len(lines) == 3
     assert all(json.loads(line)['available'] for line in lines)
+    last = json.loads(lines[-1])['energy']
+    assert last['c1'] > 0 and last['a2'] == 0.0
+    energy_file = tmp_path / 'config' / 'energy-serial123.json'
+    saved = json.loads(energy_file.read_text())['counters']
+    assert saved['c1'] >= last['c1']
+    assert stat.S_IMODE(energy_file.stat().st_mode) == 0o600
+    code, out = cli.run('status', '--json')
+    assert code == 0
+    assert json.loads(out)['energy']['c1'] >= saved['c1']
+    assert json.loads(energy_file.read_text())['counters'] == saved
 
 
 @pytest.mark.parametrize(('detail', 'shows_settings'), [

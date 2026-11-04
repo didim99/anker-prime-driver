@@ -2,8 +2,8 @@
 
 Python library to monitor and control Anker Prime chargers.
 
-> **Status: pre-alpha, under development.** The 250W cloud connection and the
-> command-line tool work; the 160W and energy counters are not done yet.
+> **Status: pre-alpha, under development.** The 250W cloud connection, energy
+> counters and the command-line tool work; the 160W is not done yet.
 
 This is an unofficial project, not affiliated with or endorsed by Anker.
 
@@ -56,6 +56,11 @@ ankerprime mode port-priority
 ankerprime display --brightness 60 --screen-timeout 5min
 ankerprime clock on --theme style_2
 ```
+
+Energy per port is not reported by the charger; the library integrates it
+from the live power readings (nothing is counted while no readings arrive).
+`monitor` keeps these counters in the same folder (`energy-<serial>.json`),
+so they continue across runs; other commands only show them.
 
 With several chargers on the account, pick one with `--serial`. Run
 `ankerprime --help` or `ankerprime <command> --help` for every option.

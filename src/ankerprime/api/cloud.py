@@ -12,9 +12,11 @@ from ankerprime.cloud.auth import (
     AccountClient, AccountCredentials, Authentication)
 from ankerprime.cloud.client import BoundDevice, CloudClient, MqttCredentials
 from ankerprime.device.a2345 import A2345Device, A2345Timings
+from ankerprime.energy.store import EnergyStore
 from ankerprime.interfaces.charger import Charger
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.mqtt import MqttConnector
+from ankerprime.interfaces.storage import DocumentStore
 from ankerprime.model.enums import ProductCode
 from ankerprime.model.errors import AuthenticationError, UnknownProductError
 from ankerprime.model.state import DeviceInfo
@@ -38,13 +40,15 @@ class CloudAccount:
     With stored ``AccountCredentials`` an expired or revoked token is
     replaced by signing in again once; without them ``AuthenticationError``
     reaches the caller. Every new token is passed to the listener so the
-    embedder can persist it.
+    embedder can persist it. With an ``energy_store`` the energy counters of
+    each charger persist across restarts.
     """
 
     _http: HttpClient
     _credentials: AccountCredentials | None
     _clock: Clock
     _timings: A2345Timings | None
+    _energy_store: DocumentStore | None
 
     _on_authentication: AuthenticationListener | None
 
@@ -60,12 +64,14 @@ class CloudAccount:
                  tls_factory: TlsFactory | None = None,
                  tls_directory: Path | None = None,
                  on_authentication: AuthenticationListener | None = None,
+                 energy_store: DocumentStore | None = None,
                  timings: A2345Timings | None = None,
                  clock: Clock | None = None):
         self._http = http
         self._credentials = credentials
         self._clock = clock or utc_now
         self._timings = timings
+        self._energy_store = energy_store
         self._on_authentication = on_authentication
         self._authentication = authentication
         self._client = CloudClient(http, authentication, self._clock)
@@ -108,8 +114,12 @@ class CloudAccount:
             return existing
         info = DeviceInfo(serial=device.serial, name=device.display_name,
                           firmware_version=device.software_version)
+        energy = None
+        if self._energy_store is not None:
+            energy = EnergyStore.for_serial(self._energy_store, device.serial)
         charger = A2345Device(self._session.channel(device), info,
-                              timings=self._timings, clock=self._clock)
+                              energy_store=energy, timings=self._timings,
+                              clock=self._clock)
         self._chargers[device.serial] = charger
         return charger
 
@@ -161,6 +171,7 @@ class CloudAccount:
                     tls_factory: TlsFactory | None = None,
                     tls_directory: Path | None = None,
                     on_authentication: AuthenticationListener | None = None,
+                    energy_store: DocumentStore | None = None,
                     timings: A2345Timings | None = None,
                     clock: Clock | None = None) -> CloudAccount:
         """Sign in and return the account.
@@ -177,5 +188,5 @@ class CloudAccount:
         return cls(http, authentication, credentials=kept,
                    connector=connector, tls_factory=tls_factory,
                    tls_directory=tls_directory,
-                   on_authentication=on_authentication, timings=timings,
-                   clock=clock)
+                   on_authentication=on_authentication,
+                   energy_store=energy_store, timings=timings, clock=clock)

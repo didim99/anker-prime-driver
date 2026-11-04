@@ -15,7 +15,7 @@ from ankerprime.cli.render import (
     render_readings, render_runtime, render_state, render_table)
 from ankerprime.cli.terminal import TerminalBlock
 from ankerprime.cloud.client import BoundDevice
-from ankerprime.model import ChargingMode, OutputId, ScreenTimeout, Weekday
+from ankerprime.model import ChargingMode, OutputId, PortId, ScreenTimeout, Weekday
 from ankerprime.model.serialize import state_to_dict
 from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import decode_message
@@ -144,10 +144,13 @@ def test_render_state() -> None:
 
 def test_render_readings_shows_ports_only() -> None:
     tracker = snapshot_state()
-    text = render_readings(tracker.build(available=False),
-                           NOW + timedelta(seconds=5))
+    state = tracker.build(available=False, energy={PortId.C1: 1.234,
+                                                   PortId.C2: 0.5})
+    text = render_readings(state, NOW + timedelta(seconds=5))
     assert 'NOT LIVE' in text and 'Updated 12:00:00 (5 s ago)' in text
+    assert 'Total power 23.94 W · energy 1.73 Wh' in text
     assert 'C1    off     charging' in text
+    assert '23.84 W  1.23 Wh' in text and '0.00 W   -' in text
     assert 'Outputs' not in text and 'Mode:' not in text
     assert render_readings(StateTracker().build(available=False),
                            NOW).splitlines()[1] == 'Updated never'

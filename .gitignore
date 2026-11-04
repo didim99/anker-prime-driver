@@ -25,3 +25,4 @@ htmlcov/
 
 # Local CLI configs and credentials used during development
 *.local.json
+/config

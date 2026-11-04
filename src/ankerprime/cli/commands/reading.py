@@ -39,11 +39,13 @@ class MonitorCommand(ChargerCommand):
 
     On a terminal the view is redrawn every interval, so the age of the last
     update and the run time keep counting while the charger is silent. Piped
-    or as JSON, one state is printed per update.
+    or as JSON, one state is printed per update. The energy counters it
+    integrates are saved in the config folder.
     """
 
     NAME = 'monitor'
     HELP = 'show live readings until Ctrl+C'
+    SAVES_ENERGY = True
 
     async def run_charger(self, context: CliContext, charger: Charger,
                           args: argparse.Namespace) -> int:

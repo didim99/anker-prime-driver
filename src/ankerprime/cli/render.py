@@ -106,7 +106,7 @@ def _header(state: ChargerState, now: datetime) -> str:
     if state.over_temperature:
         lines.append('WARNING: over-temperature protection active')
     if state.energy:
-        lines[-1] += f' · energy {state.total_energy:.3f} Wh'
+        lines[-1] += f' · energy {state.total_energy:.2f} Wh'
     return '\n'.join(lines)
 
 
@@ -123,7 +123,7 @@ def _ports(state: ChargerState) -> str:
         return ''
     rows = [_port_row(state, reading) for reading in state.ports.values()]
     header = ('Port', 'Output', 'Status', 'Voltage', 'Current', 'Power',
-              'Details')
+              'Energy', 'Details')
     return render_table(header, rows)
 
 
@@ -139,9 +139,12 @@ def _port_row(state: ChargerState, reading: PortReading) -> tuple[str, ...]:
     if reading.usb_vendor_id is not None:
         details.append(f'usb {reading.usb_vendor_id:04x}:'
                        f'{reading.usb_product_id or 0:04x}')
+    energy = state.energy.get(reading.port)
     return (reading.port.value.upper(), switched, status,
             f'{reading.voltage:.2f} V', f'{reading.current:.2f} A',
-            f'{reading.power:.2f} W', ', '.join(details))
+            f'{reading.power:.2f} W',
+            UNKNOWN if energy is None else f'{energy:.2f} Wh',
+            ', '.join(details))
 
 
 def _outputs(state: ChargerState, now: datetime) -> str:

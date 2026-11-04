@@ -1,4 +1,4 @@
-"""Where the CLI keeps the account: owner-only JSON files in a config folder.
+"""Owner-only JSON files in a config folder: the CLI login and energy counters.
 
 The folder is ``$ANKERPRIME_CONFIG_DIR`` when set, otherwise
 ``%APPDATA%\\ankerprime`` on Windows and ``$XDG_CONFIG_HOME/ankerprime``
@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from ankerprime.cloud.auth import AccountCredentials, Authentication
+from ankerprime.interfaces.storage import DocumentStore, JsonDocument
 from ankerprime.storage.json_store import JsonFileStore
 
 
@@ -19,8 +20,34 @@ CREDENTIALS_KEY = 'credentials'
 AUTHENTICATION_KEY = 'authentication'
 
 
+class ReadOnlyStore(DocumentStore):
+    """Reads another store and ignores writes.
+
+    Short commands show the stored energy counters, but only ``monitor``
+    saves them; a short command saving its older copy would undo the counts
+    of a ``monitor`` running at the same time.
+    """
+
+    _store: DocumentStore
+
+    def __init__(self, store: DocumentStore):
+        self._store = store
+
+    async def load(self, key: str) -> JsonDocument | None:
+        return await self._store.load(key)
+
+    async def save(self, key: str, document: JsonDocument) -> None:
+        pass
+
+    async def delete(self, key: str) -> None:
+        pass
+
+
 class CliConfig:
-    """Stored login: credentials for re-login and the current token."""
+    """Stored login: credentials for re-login and the current token.
+
+    The same folder holds the energy counters of each charger.
+    """
 
     _store: JsonFileStore
 
@@ -30,6 +57,11 @@ class CliConfig:
     @property
     def directory(self) -> Path:
         return self._store.directory
+
+    def energy_store(self, writable: bool) -> DocumentStore:
+        if writable:
+            return self._store
+        return ReadOnlyStore(self._store)
 
     async def credentials(self) -> AccountCredentials | None:
         document = await self._store.load(CREDENTIALS_KEY)
