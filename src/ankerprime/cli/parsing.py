@@ -8,6 +8,8 @@ from typing import TypeVar
 
 from ankerprime.cloud.values import hex_u32
 from ankerprime.model.enums import OutputId, PortId, Weekday
+from ankerprime.model.errors import InvalidParameterError
+from ankerprime.model.proxy import ProxyAddress
 
 
 EnumT = TypeVar('EnumT', bound=StrEnum)
@@ -129,3 +131,12 @@ def enum_converter(enum: type[EnumT]) -> Callable[[str], EnumT]:
 
     convert.__name__ = enum.__name__
     return convert
+
+
+def parse_proxy(text: str) -> ProxyAddress:
+    """``http://[user:password@]host[:port]``."""
+
+    try:
+        return ProxyAddress.parse(text)
+    except InvalidParameterError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None

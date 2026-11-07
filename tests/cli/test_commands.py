@@ -267,3 +267,11 @@ def test_default_config_dir(monkeypatch: pytest.MonkeyPatch,
     monkeypatch.delenv(CONFIG_DIR_VARIABLE)
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'xdg'))
     assert default_config_dir() == tmp_path / 'xdg' / 'ankerprime'
+
+
+def test_proxy_option(cli: Cli, capsys: pytest.CaptureFixture[str]) -> None:
+    code, _ = cli.run('--proxy', 'http://127.0.0.1:3128', 'regions')
+    assert code == 0
+    with pytest.raises(SystemExit):
+        cli.run('--proxy', 'socks5://127.0.0.1:1080', 'regions')
+    assert 'only http:// proxies' in capsys.readouterr().err

@@ -6,6 +6,7 @@ import logging
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import TextIO
 
@@ -16,12 +17,15 @@ from ankerprime.cli.base import (
     BleScanner, BleTransportFactory, CliContext, Command, HttpFactory)
 from ankerprime.cli.commands import COMMANDS
 from ankerprime.cli.config import CliConfig, default_config_dir
+from ankerprime.cli.parsing import parse_proxy
 from ankerprime.cli.style import ColorMode, Painter, ansi_terminal, use_color
 from ankerprime.cloud.http import AiohttpClient
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.mqtt import MqttConnector
 from ankerprime.model.errors import (
     AccountRefusedError, AnkerPrimeError, AuthenticationError)
+from ankerprime.model.proxy import ProxyAddress
+from ankerprime.transport.aiomqtt_client import AiomqttConnector
 from ankerprime.transport.cloud import TlsFactory
 
 
@@ -46,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=list(ColorMode),
                         help='colour the output (default: auto, for '
                              'terminals unless NO_COLOR is set)')
+    parser.add_argument('--proxy', type=parse_proxy, metavar='URL',
+                        help='reach the Anker cloud through an HTTP proxy: '
+                             'http://[user:password@]host:port')
     subparsers = parser.add_subparsers(dest='command', metavar='command')
     for name, command_class in COMMANDS.items():
         command = command_class()
@@ -78,7 +85,15 @@ def main(argv: list[str] | None = None, *,
     errors = Painter(use_color(args.color, sys.stderr))
     config = CliConfig(args.config_dir or default_config_dir())
     ansi = ansi_terminal(output)
-    context = CliContext(config, http_factory or aiohttp_client, output,
+    proxy: ProxyAddress | None = args.proxy
+    if connector is None and proxy is not None:
+        try:
+            connector = AiomqttConnector(proxy=proxy)
+        except AnkerPrimeError as error:
+            print(f'{errors.bad("error:")} {error}', file=sys.stderr)
+            return EXIT_ERROR
+    http = http_factory or partial(aiohttp_client, proxy)
+    context = CliContext(config, http, output,
                          connector=connector, tls_factory=tls_factory,
                          ble_transport=ble_transport, ble_scanner=ble_scanner,
                          painter=Painter(use_color(args.color, output)),
@@ -104,9 +119,10 @@ def main(argv: list[str] | None = None, *,
 
 
 @asynccontextmanager
-async def aiohttp_client() -> AsyncIterator[HttpClient]:
+async def aiohttp_client(proxy: ProxyAddress | None = None
+                         ) -> AsyncIterator[HttpClient]:
     async with aiohttp.ClientSession() as session:
-        yield AiohttpClient(session)
+        yield AiohttpClient(session, proxy=proxy)
 
 
 def _configure_logging(debug: bool) -> None:

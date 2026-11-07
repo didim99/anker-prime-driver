@@ -69,6 +69,11 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
   value; `CloudAccount.options`.
 - `replace(**changes)` on `A2345Timings`, `A2687Timings` and
   `ScreenPictureTimings`.
+- HTTP proxy for the cloud connection: `ProxyAddress`;
+  `AiohttpClient(proxy=...)` for sign-in, API calls and uploads;
+  `AiomqttConnector(proxy=...)` tunnels MQTT with `CONNECT` and needs the new
+  `proxy` extra (PySocks).
+- CLI: global `--proxy http://[user:password@]host:port`.
 
 ### Changed
 - `HttpClient.put()` is abstract and `Charger` has new abstract methods:

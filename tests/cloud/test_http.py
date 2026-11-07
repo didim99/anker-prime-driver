@@ -1,5 +1,7 @@
 """aiohttp client adapter tests against a local server."""
 
+import base64
+
 import aiohttp
 import pytest
 from aiohttp import web
@@ -7,6 +9,8 @@ from aiohttp.test_utils import TestServer
 
 from ankerprime.cloud.http import AiohttpClient
 from ankerprime.model import ChargerConnectionError
+from ankerprime.model.proxy import ProxyAddress
+from tests.transport.proxy import running_proxy
 
 
 async def echo(request: web.Request) -> web.Response:
@@ -64,3 +68,17 @@ async def test_put_keeps_a_signed_link_byte_for_byte() -> None:
         url = str(server.make_url('/')).rstrip('/') + signed
         response = await client.put(url, {}, b'x')
     assert response.body.decode() == signed
+
+
+async def test_requests_go_through_the_proxy() -> None:
+    async with running_proxy() as proxy, aiohttp.ClientSession() as session:
+        address = ProxyAddress('127.0.0.1', proxy.port, username='u@x',
+                               password='p:w')
+        client = AiohttpClient(session, proxy=address)
+        response = await client.put('http://upload.invalid/a?X-Sig=a%2Fb',
+                                    {}, b'x')
+    assert response.status == 200
+    assert response.body == b'PUT http://upload.invalid/a?X-Sig=a%2Fb HTTP/1.1'
+    authorization = proxy.authorizations[0]
+    assert authorization is not None
+    assert base64.b64decode(authorization.split()[1]) == b'u@x:p:w'

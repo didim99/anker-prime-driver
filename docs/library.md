@@ -65,6 +65,17 @@ The constructor, `login()` and `login_phone()` take the same
 listener, an `energy_store`, the chargers' `timings` and a `clock`.
 `options.replace(...)` copies them with some values changed.
 
+Behind an HTTP proxy, give the same `ProxyAddress` (`ankerprime.model`) to
+the HTTP client and to `AiomqttConnector`
+(`ankerprime.transport.aiomqtt_client`), which needs the `proxy` extra
+(PySocks):
+
+```python
+proxy = ProxyAddress.parse('http://proxy.lan:3128')
+http = AiohttpClient(session, proxy=proxy)
+options = AccountOptions(connector=AiomqttConnector(proxy=proxy))
+```
+
 To avoid signing in on every start, keep the token: `account.authentication`
 and every renewed token passed to the `on_authentication` listener serialize
 with `to_document()`; restore with `Authentication.from_document(...)` and

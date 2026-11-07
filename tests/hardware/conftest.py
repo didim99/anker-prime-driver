@@ -18,6 +18,8 @@ from ankerprime.cli.main import aiohttp_client
 from ankerprime.cloud.auth import Authentication
 from ankerprime.interfaces.charger import Charger
 from ankerprime.model.enums import ProductCode
+from ankerprime.model.proxy import ProxyAddress
+from ankerprime.transport.aiomqtt_client import AiomqttConnector
 from tests.hardware import helpers
 from tests.hardware.helpers import Fingerprint, fingerprint, settled
 
@@ -32,14 +34,18 @@ async def charger(request: pytest.FixtureRequest
 
     helpers.SETTLE = request.config.getoption('hardware_settle')
     serial = request.config.getoption('hardware_serial')
+    proxy_url = request.config.getoption('hardware_proxy')
+    proxy = ProxyAddress.parse(proxy_url) if proxy_url else None
     config = CliConfig(default_config_dir())
     authentication = await config.authentication()
     if authentication is None:
         pytest.exit('not signed in; run "ankerprime login" first', 2)
     credentials = await config.credentials()
     renewed: list[Authentication] = []
-    options = AccountOptions(on_authentication=renewed.append)
-    async with aiohttp_client() as http:
+    connector = AiomqttConnector(proxy=proxy) if proxy is not None else None
+    options = AccountOptions(connector=connector,
+                             on_authentication=renewed.append)
+    async with aiohttp_client(proxy) as http:
         account = CloudAccount(http, authentication, credentials=credentials,
                                options=options)
         try:

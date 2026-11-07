@@ -1,14 +1,18 @@
 """aiomqtt adapter tests against a local amqtt broker."""
 
 import asyncio
+import base64
 import socket
+import sys
 from collections.abc import AsyncIterator
 
 import pytest
 
 from ankerprime.interfaces.mqtt import MqttConnection, MqttEndpoint
-from ankerprime.model import ChargerConnectionError
+from ankerprime.model import ChargerConnectionError, InvalidParameterError
+from ankerprime.model.proxy import ProxyAddress
 from ankerprime.transport.aiomqtt_client import AiomqttConnector
+from tests.transport.proxy import running_proxy
 
 
 broker_module = pytest.importorskip('amqtt.broker')
@@ -68,3 +72,27 @@ async def test_use_after_close_raises_connection_error(
     await connection.close()
     with pytest.raises(ChargerConnectionError):
         await connection.publish('topic', b'x')
+
+
+async def test_connect_through_a_proxy(broker_port: int) -> None:
+    pytest.importorskip('socks')
+    async with running_proxy() as proxy:
+        address = ProxyAddress('127.0.0.1', proxy.port, username='u',
+                               password='p:w')
+        endpoint = MqttEndpoint('127.0.0.1', broker_port, 'proxied', None, 30)
+        connection = await AiomqttConnector(timeout=5, proxy=address).connect(
+            endpoint)
+        try:
+            await connection.subscribe('dt/anker_power/A2345/SERIAL/#')
+        finally:
+            await connection.close()
+    assert proxy.requests == [f'CONNECT 127.0.0.1:{broker_port} HTTP/1.1']
+    credentials = base64.b64encode(b'u:p:w').decode()
+    assert [value.lower() if value else value
+            for value in proxy.authorizations] == [f'basic {credentials}'.lower()]
+
+
+def test_proxy_needs_pysocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, 'socks', None)
+    with pytest.raises(InvalidParameterError, match='proxy" extra'):
+        AiomqttConnector(proxy=ProxyAddress('127.0.0.1', 3128))

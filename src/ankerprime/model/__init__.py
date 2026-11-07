@@ -19,6 +19,7 @@ from ankerprime.model.pictures import ClockPicture, ScreenPictureUpload
 from ankerprime.model.product import (
     A2345, A2687, PRODUCTS, OutputSpec,
     PortSpec, Product, ValueRange, get_product)
+from ankerprime.model.proxy import ProxyAddress
 from ankerprime.model.state import (
     ChargerSettings, ChargerState, ClockSchedule, ClockSettings, Countdown,
     DeviceInfo, DisplaySettings, OutputState, PortReading, Schedule)
@@ -69,6 +70,7 @@ __all__ = [
     'Product',
     'ProductCode',
     'ProtocolError',
+    'ProxyAddress',
     'Schedule',
     'ScheduleSlot',
     'ScreenOrientation',

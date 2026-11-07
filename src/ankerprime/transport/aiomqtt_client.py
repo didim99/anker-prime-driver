@@ -1,7 +1,8 @@
 """``MqttConnector`` on top of aiomqtt (paho-mqtt).
 
 aiomqtt watches the socket with ``loop.add_reader``, so on Windows it needs a
-selector event loop, not the default proactor loop.
+selector event loop, not the default proactor loop. A proxy needs PySocks
+(the ``proxy`` extra), which paho-mqtt uses to open the tunnel.
 """
 
 from collections.abc import AsyncIterator
@@ -11,10 +12,14 @@ import aiomqtt
 
 from ankerprime.interfaces.mqtt import (
     MqttConnection, MqttConnector, MqttEndpoint, MqttMessage)
-from ankerprime.model.errors import ChargerConnectionError
+from ankerprime.model.errors import (
+    ChargerConnectionError, InvalidParameterError)
+from ankerprime.model.proxy import ProxyAddress
 
 
 DEFAULT_TIMEOUT = 20.0
+PROXY_EXTRA_HINT = ('MQTT through a proxy needs the "proxy" extra: '
+                    'pip install "anker-prime-driver[proxy]"')
 
 
 class AiomqttConnection(MqttConnection):
@@ -63,12 +68,19 @@ class AiomqttConnection(MqttConnection):
 
 
 class AiomqttConnector(MqttConnector):
-    """Connects with MQTT 3.1.1 and a clean session, as the official app."""
+    """Connects with MQTT 3.1.1 and a clean session, as the official app.
+
+    With a ``proxy`` the broker is reached through an HTTP ``CONNECT``
+    tunnel; raises ``InvalidParameterError`` without PySocks.
+    """
 
     _timeout: float
+    _proxy: aiomqtt.ProxySettings | None
 
-    def __init__(self, timeout: float = DEFAULT_TIMEOUT):
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT, *,
+                 proxy: ProxyAddress | None = None):
         self._timeout = timeout
+        self._proxy = _proxy_settings(proxy) if proxy is not None else None
 
     async def connect(self, endpoint: MqttEndpoint) -> MqttConnection:
         client = aiomqtt.Client(endpoint.host, endpoint.port,
@@ -77,12 +89,22 @@ class AiomqttConnector(MqttConnector):
                                 clean_session=True,
                                 keepalive=endpoint.keepalive,
                                 tls_context=endpoint.tls,
-                                timeout=self._timeout)
+                                timeout=self._timeout, proxy=self._proxy)
         try:
             await client.__aenter__()
         except (aiomqtt.MqttError, OSError) as error:
             raise _connection_error('connect', error) from error
         return AiomqttConnection(client)
+
+
+def _proxy_settings(proxy: ProxyAddress) -> aiomqtt.ProxySettings:
+    try:
+        import socks
+    except ImportError:
+        raise InvalidParameterError(PROXY_EXTRA_HINT) from None
+    return aiomqtt.ProxySettings(
+        proxy_type=socks.HTTP, proxy_addr=proxy.host, proxy_port=proxy.port,
+        proxy_username=proxy.username, proxy_password=proxy.password)
 
 
 def _connection_error(action: str, error: Exception) -> ChargerConnectionError:

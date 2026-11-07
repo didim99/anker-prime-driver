@@ -26,7 +26,6 @@ classifiers = [
     "Topic :: Home Automation",
     "Typing :: Typed",
 ]
-
 # Lower bounds only: the library must coexist with Home Assistant's own pins.
 dependencies = [
     "aiohttp>=3.9",
@@ -41,6 +40,9 @@ ble = [
 ]
 pictures = [
     "pillow>=10.0",
+]
+proxy = [
+    "PySocks>=1.7",
 ]
 
 [project.scripts]

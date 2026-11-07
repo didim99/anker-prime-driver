@@ -37,6 +37,7 @@ for the 250W may follow later without changes for library users.
 pip install anker-prime-driver            # cloud (250W) support
 pip install "anker-prime-driver[ble]"     # plus Bluetooth (160W) support
 pip install "anker-prime-driver[pictures]"  # plus picture preparation (Pillow)
+pip install "anker-prime-driver[proxy]"     # plus MQTT through an HTTP proxy
 ```
 
 Requires Python 3.11 or later.
@@ -86,11 +87,12 @@ only when asked:
 pytest tests/hardware --hardware -rs
 ```
 
-The charger is the CLI's default one, or `--hardware-serial SERIAL`. Writes
-that cannot be undone are never made: no own picture is shown on the charger
-(an uploaded test picture is deleted from the account again), and schedule
-slots that were never set are skipped, since the charger has no "unset"
-value to restore. Outputs are switched only when one is on and powers
+The charger is the CLI's default one, or `--hardware-serial SERIAL`;
+`--hardware-proxy URL` goes through an HTTP proxy like the CLI's `--proxy`.
+Writes that cannot be undone are never made: no own picture is shown on the
+charger (an uploaded test picture is deleted from the account again), and
+schedule slots that were never set are skipped, since the charger has no
+"unset" value to restore. Outputs are switched only when one is on and powers
 nothing. The last test compares every touched value with the state found at
 the start. `--hardware-settle SECONDS` sets the wait for a read-back
 (default 4).

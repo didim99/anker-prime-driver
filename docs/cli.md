@@ -28,6 +28,7 @@ Given before the command name:
 | `--config-dir DIR`            | configuration folder (see below)                               |
 | `--color auto\|always\|never` | colored output; `auto` colors terminals only                   |
 | `--debug`                     | log library details; identifiers are shortened to 4 characters |
+| `--proxy URL`                 | reach the Anker cloud through an HTTP proxy (see below)        |
 | `--version`                   | print the version                                              |
 
 With `--color auto`, the `NO_COLOR` environment variable turns colors off and
@@ -35,6 +36,12 @@ With `--color auto`, the `NO_COLOR` environment variable turns colors off and
 never colored. On Windows, colors and the in-place `monitor` view need a
 console with virtual-terminal support (Windows 10 and later); otherwise the
 output is plain.
+
+`--proxy http://[user:password@]host:port` sends every cloud request through
+an HTTP proxy: sign-in, API calls, picture uploads and the MQTT connection
+(tunneled with `CONNECT`, so the proxy must allow ports 443 and 8883). MQTT
+through a proxy needs the `proxy` extra: `pip install
+"anker-prime-driver[proxy]"`. Bluetooth is not affected.
 
 Every command has `--help`.
 

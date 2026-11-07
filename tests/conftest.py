@@ -21,6 +21,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption('--hardware-serial', metavar='SERIAL',
                     help="charger serial (default: the CLI's default cloud "
                          'charger, else the only one)')
+    group.addoption('--hardware-proxy', metavar='URL',
+                    help='HTTP proxy for the cloud connection: '
+                         'http://[user:password@]host:port')
     group.addoption('--hardware-settle', metavar='SECONDS', type=float,
                     default=DEFAULT_SETTLE,
                     help='seconds to wait for a read-back snapshot '
