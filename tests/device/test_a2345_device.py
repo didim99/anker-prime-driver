@@ -17,7 +17,8 @@ from tests.device.charger import (
     FakeChannel, charger_frame, charger_responder, firmware_change)
 from tests.device.timings import A2345_FAST
 from tests.protocol.a2345.fixtures import (
-    REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT, THEME_STATUS)
+    REALTIME_ACKNOWLEDGEMENT, REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT,
+    THEME_STATUS)
 from tests.utils import MemoryStore, wait_until
 
 
@@ -216,6 +217,17 @@ async def test_ack_for_another_client_rereads_settings(
     channel.deliver(charger_frame(0x0A07, [(0xA1, b'\x34')], increment=0))
     await wait_until(lambda: channel.sent_types()[:2] == [SNAPSHOT_REQUEST,
                                                           THEME_REQUEST])
+
+
+async def test_realtime_ack_does_not_reread_settings(
+        device: A2345Device, channel: FakeChannel) -> None:
+    """``0x0A0B`` answers the realtime trigger; nothing changed."""
+
+    await connected(device)
+    channel.clear()
+    channel.deliver(REALTIME_ACKNOWLEDGEMENT)
+    await asyncio.sleep(0.1)
+    assert SNAPSHOT_REQUEST not in channel.sent_types()
 
 
 async def test_settings_are_reread_periodically(channel: FakeChannel) -> None:

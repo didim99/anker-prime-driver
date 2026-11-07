@@ -15,7 +15,7 @@ from ankerprime.protocol.a2345.frame import Frame
 from ankerprime.utils import u32le
 from tests.device.account import FakeAccount
 from tests.device.charger import (
-    FakeChannel, Responder, charger_frame, charger_responder)
+    FakeChannel, Responder, charger_frame, charger_responder, theme_status)
 from tests.device.test_a2345_device import connected
 from tests.device.timings import A2345_FAST
 from tests.utils import wait_until
@@ -242,3 +242,16 @@ async def test_picture_time(device: A2345Device,
     assert channel.sent[0].message_type == IMAGE_TIME_DISPLAY
     clock = device.state.settings.clock
     assert clock is not None and clock.picture_time is False
+
+
+async def test_picture_time_needs_the_requested_status(
+        device: A2345Device, channel: FakeChannel) -> None:
+    """Without an ack, only a theme status with the new value confirms."""
+
+    await connected(device)
+    channel.set_responder(
+        lambda request: [theme_status(True)]
+        if request.message_type == IMAGE_TIME_DISPLAY
+        else charger_responder()(request))
+    with pytest.raises(ChargerTimeoutError):
+        await device.set_picture_time(False)

@@ -56,7 +56,7 @@ from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
     KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES)
 from ankerprime.protocol.a2345.commands import Command
-from ankerprime.protocol.a2345.frame import decode_frame
+from ankerprime.protocol.a2345.frame import MessageType, decode_frame
 from ankerprime.protocol.a2345.messages import (
     RealtimeTelemetry, StatusSnapshot, decode_message)
 from ankerprime.protocol.a2345.settings import (
@@ -209,13 +209,17 @@ class A2345Timings:
         return copy_with(self, changes)
 
 class _PendingWrite:
-    """A write waiting for its acknowledgement."""
+    """A write waiting for its acknowledgement.
+
+    The future's result is the ack, or None when a theme status confirmed
+    a write the charger does not acknowledge.
+    """
 
     _command: Command
-    _future: asyncio.Future[WriteAcknowledgement]
+    _future: asyncio.Future[WriteAcknowledgement | None]
 
     def __init__(self, command: Command,
-                 future: asyncio.Future[WriteAcknowledgement]):
+                 future: asyncio.Future[WriteAcknowledgement | None]):
         self._command = command
         self._future = future
 
@@ -224,7 +228,7 @@ class _PendingWrite:
         return self._command
 
     @property
-    def future(self) -> asyncio.Future[WriteAcknowledgement]:
+    def future(self) -> asyncio.Future[WriteAcknowledgement | None]:
         return self._future
 
 
@@ -322,6 +326,7 @@ class A2345Device(RunningCharger, ChannelListener):
         if not self._tracker.apply(message, self._clock()):
             return
         if isinstance(message, SettingsChange):
+            self._confirm(message)
             for update in message.updates:
                 if isinstance(update, ThemeDownloadUpdate):
                     self._pictures.on_download(update)
@@ -668,7 +673,7 @@ class A2345Device(RunningCharger, ChannelListener):
                 self._pending.remove(pending)
                 if self._channel.is_open:
                     self._schedule_readback(include_theme)
-        if ack.rejected:
+        if ack is not None and ack.rejected:
             raise WriteRejectedError(ack.status or 0)
         if expected:
             change = SettingsChange(command.message_type, expected)
@@ -676,7 +681,8 @@ class A2345Device(RunningCharger, ChannelListener):
             self._publish_state()
 
     async def _await_ack(self, pending: _PendingWrite,
-                         waits: Sequence[float]) -> WriteAcknowledgement:
+                         waits: Sequence[float]
+                         ) -> WriteAcknowledgement | None:
         for wait in waits:
             await self._send(pending.command)
             try:
@@ -691,11 +697,22 @@ class A2345Device(RunningCharger, ChannelListener):
             if not pending.future.done() and pending.command.matches(ack):
                 pending.future.set_result(ack)
                 return
+        if ack.message_type == MessageType.REALTIME_ACK:
+            # Answers the realtime trigger: nothing changed.
+            return
         logger.debug('ack %#06x (status %s) from %s matches no pending write',
                      ack.message_type, ack.status, self._label)
         # Acks reach every client; another one changed something.
         if self._channel.is_open and not ack.rejected:
             self._schedule_readback(include_theme=True)
+
+    def _confirm(self, change: SettingsChange) -> None:
+        """Complete writes the charger answers with a theme status."""
+
+        for pending in self._pending:
+            if (not pending.future.done()
+                    and pending.command.confirmed_by(change)):
+                pending.future.set_result(None)
 
     def _schedule_readback(self, include_theme: bool) -> None:
         """Read the snapshot once a burst of writes settles."""

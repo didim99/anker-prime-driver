@@ -104,6 +104,11 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
   message.
 - 250W: the debug log names every message type sent and received (except
   telemetry) and acknowledgements that match no pending write.
+- 250W: the time over own pictures (`0x0222`) is confirmed by the theme
+  status the charger answers with; it sends no acknowledgement for this
+  write (seen on hardware), so `set_picture_time()` timed out.
+- 250W: the realtime trigger's acknowledgement no longer starts a settings
+  read-back as if another client had written; it did so every 8 s.
 - 250W: writing the preferred outputs switches the charger to the
   port-priority mode (seen on hardware); documented in `Charger` and the
   CLI reference.

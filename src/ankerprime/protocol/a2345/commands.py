@@ -23,7 +23,8 @@ from ankerprime.protocol.a2345.frame import (
     CLOUD_SESSION, MessageType, encode_request)
 from ankerprime.protocol.a2345.settings import (
     ACK_PREFIX, CUSTOM_CHARGING_MODE_CODE, CustomProfile, PortProtocol)
-from ankerprime.protocol.a2345.updates import WriteAcknowledgement
+from ankerprime.protocol.a2345.updates import (
+    ClockUpdate, SettingsChange, WriteAcknowledgement)
 from ankerprime.protocol.codes import encode_value
 from ankerprime.utils import u32le
 
@@ -53,6 +54,10 @@ class Command:
     # Reads answered by their data message instead of an ack.
     DATA_ANSWERED_TYPES: ClassVar[frozenset[int]] = frozenset({
         MessageType.STATUS_SNAPSHOT_REQUEST, MessageType.THEME_STATUS_REQUEST})
+    # Writes the charger answers with a theme status instead of an ack (seen
+    # on hardware, firmware 2.1.1.6); the status shows whether it applied.
+    THEME_ANSWERED_TYPES: ClassVar[frozenset[int]] = frozenset({
+        MessageType.IMAGE_TIME_DISPLAY})
 
     _message_type: int
     _fields: Mapping[int, bytes]
@@ -96,7 +101,8 @@ class Command:
     def ack_type(self) -> int | None:
         """Type of the ``0x0ANN`` answer; None when a data message answers."""
 
-        if self._message_type in self.DATA_ANSWERED_TYPES:
+        if self._message_type in (self.DATA_ANSWERED_TYPES
+                                  | self.THEME_ANSWERED_TYPES):
             return None
         return ACK_PREFIX | (self._message_type & 0xFF)
 
@@ -104,6 +110,17 @@ class Command:
         return encode_request(self._message_type, self._fields,
                               timestamp=timestamp, session=session,
                               allow_long_fields=self._allow_long_fields)
+
+    def confirmed_by(self, change: SettingsChange) -> bool:
+        """Check that a theme status shows this write applied."""
+
+        if (self._message_type not in self.THEME_ANSWERED_TYPES
+                or change.message_type != MessageType.THEME_STATUS):
+            return False
+        enabled = bool(self._fields[0xA2][0])
+        return any(isinstance(update, ClockUpdate)
+                   and update.image_time_display is enabled
+                   for update in change.updates)
 
     def matches(self, ack: WriteAcknowledgement) -> bool:
         """Check that the ack answers this command; unechoed parts match any."""

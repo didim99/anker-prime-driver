@@ -7,13 +7,16 @@ from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.model.errors import ChargerConnectionError
 from ankerprime.protocol.a2345.frame import Frame, decode_frame
 from ankerprime.protocol.ff09 import HEADER, checksum
-from tests.protocol.a2345.fixtures import REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT
+from tests.protocol.a2345.fixtures import (
+    REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT, THEME_STATUS)
 
 
 Responder = Callable[[Frame], list[bytes]]
 
 ACK_MARKER = b'\x34'
 GROUP_ECHO_ACKS = (0x0A07, 0x0A08, 0x0A09)
+IMAGE_TIME_DISPLAY = 0x0222
+TAG_IMAGE_TIME_DISPLAY = 0xA6
 
 
 def charger_frame(message_type: int, fields: list[tuple[int, bytes]],
@@ -29,6 +32,17 @@ def charger_frame(message_type: int, fields: list[tuple[int, bytes]],
     body[2:4] = (len(body) + 1).to_bytes(2, 'little')
     body.append(checksum(body))
     return bytes(body)
+
+
+def theme_status(image_time_display: bool) -> bytes:
+    """The captured ``0x0A02`` with the time over own pictures set."""
+
+    frame = decode_frame(THEME_STATUS)
+    fields = [(field.tag, field.raw) for field in frame.fields
+              if field.tag != TAG_IMAGE_TIME_DISPLAY]
+    fields.append((TAG_IMAGE_TIME_DISPLAY,
+                   bytes((0x01, int(image_time_display)))))
+    return charger_frame(frame.message_type, fields, frame.increment)
 
 
 def ack_for(request: Frame, status: int = 0) -> bytes:
@@ -63,6 +77,11 @@ def charger_responder(status: int = 0,
             return [REALTIME_OLD_FIRMWARE] * realtime_frames
         if request.message_type == 0x0202:
             return []
+        if request.message_type == IMAGE_TIME_DISPLAY:
+            # Answered with a theme status, not an ack (seen on hardware).
+            enabled = request.field(0xA2)
+            assert enabled is not None
+            return [theme_status(bool(enabled.raw[-1]))]
         return [ack_for(request, status)]
 
     return respond
