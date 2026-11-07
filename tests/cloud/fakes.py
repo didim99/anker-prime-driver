@@ -109,6 +109,7 @@ CATALOGUE = {'category': [
     ]},
 ]}
 UPLOAD_URL = 'https://upload.example/signed?sig=1'
+SMS_CODE = '246810'
 PICTURE_ENDPOINTS = frozenset({
     'get_clock_screensavers', 'get_manual_clock_screensavers',
     'get_app_up_token_general', 'add_manual_clock_screensavers',
@@ -235,6 +236,7 @@ class FakeAnkerCloud:
     _revoked: set[str]
     _login_ok: bool
     _mini_power: FakeMiniPower
+    _sms_codes: list[str]
 
     def __init__(self, devices: list[dict[str, Any]] | None = None):
         self._devices = DEVICES if devices is None else devices
@@ -242,6 +244,7 @@ class FakeAnkerCloud:
         self._revoked = set()
         self._login_ok = True
         self._mini_power = FakeMiniPower()
+        self._sms_codes = []
 
     @property
     def mini_power(self) -> FakeMiniPower:
@@ -257,8 +260,21 @@ class FakeAnkerCloud:
     def set_login_ok(self, ok: bool) -> None:
         self._login_ok = ok
 
+    @property
+    def sms_codes(self) -> list[str]:
+        """Phone numbers an SMS code was sent to."""
+
+        return self._sms_codes
+
     def __call__(self, request: Request) -> HttpResponse:
         if request.path == '/passport/login':
+            return self._login()
+        if request.path == '/passport/phone_verification_code':
+            self._sms_codes.append(request.json()['phone_number'])
+            return json_response({'code': 0, 'data': None})
+        if request.path == '/passport/phone_verification_login':
+            if request.json()['verify_code'] != SMS_CODE:
+                return json_response({'code': 26084, 'msg': 'wrong code'})
             return self._login()
         if request.headers.get('x-auth-token') in self._revoked:
             return json_response({'code': 26084, 'msg': 'expired'})

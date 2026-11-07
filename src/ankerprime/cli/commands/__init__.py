@@ -2,7 +2,8 @@
 
 from ankerprime.cli.base import Command
 from ankerprime.cli.commands.account import (
-    DevicesCommand, LoginCommand, LogoutCommand, RegionsCommand)
+    DevicesCommand, LoginCommand, LogoutCommand,
+    PhoneLoginCommand, RegionsCommand)
 from ankerprime.cli.commands.bluetooth import ScanCommand
 from ankerprime.cli.commands.chargers import ChargerAliasCommand
 from ankerprime.cli.commands.control import (
@@ -30,6 +31,7 @@ COMMANDS: dict[str, type[Command]] = {
     'holiday': HolidayCommand,
     'labs': LabsCommand,
     'login': LoginCommand,
+    'login-phone': PhoneLoginCommand,
     'logout': LogoutCommand,
     'mode': ModeCommand,
     'monitor': MonitorCommand,

@@ -7,7 +7,7 @@ import pytest
 from ankerprime.cloud.auth import (
     AccountClient, AccountCredentials,
     Authentication, gmt_offset, parse_expiration)
-from ankerprime.cloud.regions import COM_SERVER, EU_SERVER
+from ankerprime.cloud.regions import CN_SERVER, COM_SERVER, EU_SERVER
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
     AuthenticationError, ChargerConnectionError,
@@ -196,3 +196,69 @@ def test_account_credentials_document_round_trip() -> None:
     restored = AccountCredentials.from_document(credentials.to_document())
     assert restored == credentials
     assert AccountCredentials.from_document({'version': 1}) is None
+
+
+async def test_phone_code_request() -> None:
+    http = FakeHttpClient(lambda _: json_response({'code': 0, 'data': None}))
+    await client_for(http).request_phone_code(' +86 13800138000 ')
+    request = http.requests[0]
+    assert request.url == CN_SERVER + '/passport/phone_verification_code'
+    assert request.json() == {'phone_number': '13800138000', 'kind': 'login'}
+    headers = request.headers
+    assert headers['country'] == 'CN' and headers['model-type'] == 'PHONE'
+    assert headers['language'] == 'zh-Hans' and headers['x-app-key'] == 'CN'
+    assert headers['app-version'] == '3.23.0'
+    assert headers['x-auth-ts'] == str(int(NOW.timestamp()))
+
+
+async def test_phone_login_returns_a_mainland_token() -> None:
+    http = FakeHttpClient(lambda _: json_response(login_data()))
+    auth = await client_for(http).login_phone('13800138000', ' 123456 ')
+    request = http.requests[0]
+    assert request.url == CN_SERVER + '/passport/phone_verification_login'
+    body = request.json()
+    assert body['phone_number'] == '13800138000'
+    assert body['verify_code'] == '123456'
+    assert len(bytes.fromhex(body['client_secret_info']['public_key'])) == 65
+    assert auth.country == 'CN' and auth.server == CN_SERVER
+    assert auth.user_id == USER_ID
+    restored = Authentication.from_document(auth.to_document())
+    assert restored == auth
+
+
+@pytest.mark.parametrize('phone, code', [
+    ('23800138000', '123456'), ('1380013800', '123456'),
+    ('13800138000', '12345'), ('13800138000', 'abcdef')])
+async def test_phone_login_checks_input(phone: str, code: str) -> None:
+    http = FakeHttpClient(lambda _: json_response(login_data()))
+    with pytest.raises(InvalidParameterError):
+        await client_for(http).login_phone(phone, code)
+    assert http.requests == []
+
+
+@pytest.mark.parametrize('code, message', [
+    (26124, 'no Anker account'), (26008, 'could not be sent'),
+    (10001, 'phone login refused')])
+async def test_phone_errors_do_not_echo_the_server(code: int,
+                                                   message: str) -> None:
+    http = FakeHttpClient(lambda _: json_response(
+        {'code': code, 'msg': 'number 13800138000 unknown'}))
+    with pytest.raises(AuthenticationError, match=message) as info:
+        await client_for(http).request_phone_code('13800138000')
+    assert '13800138000' not in str(info.value)
+
+
+async def test_email_login_points_mainland_accounts_to_the_phone() -> None:
+    http = FakeHttpClient(lambda _: json_response(login_data()))
+    with pytest.raises(InvalidParameterError, match='phone'):
+        await client_for(http).login('a@example.com', 'secret', 'CN')
+
+
+def test_stored_token_allows_only_known_servers() -> None:
+    auth = make_authentication(USER_ID, country='CN')
+    document = auth.to_document()
+    document['server'] = CN_SERVER + '/'
+    restored = Authentication.from_document(document)
+    assert restored is not None and restored.server == CN_SERVER
+    document['server'] = 'https://aiot-api-cn.example.com'
+    assert Authentication.from_document(document) is None

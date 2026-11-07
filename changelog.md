@@ -9,7 +9,11 @@ with every other change; documentation-only changes keep the version.
 0.7.3 is the first version published on PyPI; earlier numbers were assigned
 to the development history afterwards.
 
-## [Unreleased]
+## [0.8.0] - 2026-11-07
+
+The remaining features of Charker: custom charging on both models, clock
+pictures (250W), the screen picture (160W) and mainland China accounts. All
+are experimental: implemented from Charker, not yet confirmed on hardware.
 
 ### Added
 - 250W custom charging mode (experimental):
@@ -54,12 +58,23 @@ to the development history afterwards.
   `display.screen_picture` in the state; `pictures.SCREEN_PICTURE`.
 - CLI: `custom-mode set` (limits without storing; the 160W's way) and
   `screen-picture upload FILE --i-understand|select ID CRC32`.
+- Mainland China accounts: `AccountClient.request_phone_code()` and
+  `login_phone()` on the mainland server with the mainland app's headers;
+  `CloudAccount.login_phone()` (no automatic re-login: a new SMS code is
+  needed once the token ends); stored mainland tokens are accepted. Custom
+  profiles use the mainland limits and protocols.
+- CLI: `login-phone NUMBER [--send-only | --code CODE] [--code-stdin]`;
+  `regions` points mainland China to it.
 
 ### Changed
+- `HttpClient.put()` is abstract and `Charger` has new abstract methods:
+  own implementations of these interfaces must add them.
 - 250W: max compatibility and device identification exclude each other;
   switching one on first switches the other off. With an account, both are
   written to the account first, then to the charger, as the official app
   does.
+- Email login with country `CN` explains that mainland accounts sign in by
+  phone; `regions.UNSUPPORTED_REGIONS` is replaced by `PHONE_REGIONS`.
 - 250W: switching the clock while a picture is shown resends that picture
   instead of failing; `set_clock()` with a picture theme raises
   `InvalidParameterError` (use `apply_clock_picture()`).
@@ -222,5 +237,3 @@ First release on PyPI.
 
 ### Added
 - Project skeleton and tooling.
-
-[0.7.3]: https://pypi.org/project/anker-prime-driver/0.7.3/

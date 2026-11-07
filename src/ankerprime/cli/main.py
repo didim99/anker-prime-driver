@@ -91,7 +91,8 @@ def main(argv: list[str] | None = None, *,
         return EXIT_INTERRUPTED
     except AuthenticationError as error:
         print(f'{errors.bad("error:")} {error}', file=sys.stderr)
-        hint = 'run "ankerprime login" again'
+        hint = ('run "ankerprime login" again ("login-phone" for mainland '
+                'China)')
         if isinstance(error, AccountRefusedError):
             hint = ('pass --owner-id with the Anker account ID the charger '
                     'is bound to')

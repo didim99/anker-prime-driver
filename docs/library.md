@@ -67,6 +67,15 @@ the account directly with
 expired token is renewed by signing in again; without them an
 `AuthenticationError` reaches you.
 
+Mainland China accounts sign in by SMS on their own server, so the token
+cannot be renewed without a new code:
+
+```python
+await AccountClient(http).request_phone_code('13800138000')
+code = input('SMS code: ')
+account = await CloudAccount.login_phone(http, '13800138000', code)
+```
+
 ### 160W over Bluetooth
 
 Needs the `ble` extra.

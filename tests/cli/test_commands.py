@@ -91,7 +91,8 @@ def test_regions(cli: Cli) -> None:
     assert code == 0
     assert re.search(r'^JP +Japan +ankerpower-api-eu\.anker\.com$', out,
                      re.M)
-    assert 'SMS login, unsupported' in out
+    assert re.search(r'^CN +Mainland China +aiot-api-cn\.anker\.com\.cn '
+                     r'\(SMS login: login-phone\)$', out, re.M)
 
 
 def test_login_stores_owner_only_files(cli: Cli, tmp_path: Path) -> None:

@@ -10,11 +10,11 @@ import pytest
 from ankerprime.api import CloudAccount
 from ankerprime.cloud.auth import AccountCredentials, Authentication
 from ankerprime.cloud.client import BoundDevice
-from ankerprime.cloud.regions import EU_SERVER
+from ankerprime.cloud.regions import CN_SERVER, EU_SERVER
 from ankerprime.device.a2345 import A2345Timings
 from ankerprime.model import (
     AuthenticationError, Capability, OutputId, ProductCode, UnknownProductError)
-from tests.cloud.fakes import FakeAnkerCloud, FakeHttpClient
+from tests.cloud.fakes import SMS_CODE, FakeAnkerCloud, FakeHttpClient
 from tests.protocol.a2345.fixtures import STATUS_SNAPSHOT
 from tests.transport.fakes import FakeMqttConnector
 from tests.utils import no_tls, wait_until
@@ -139,3 +139,28 @@ async def test_charger_reads_account_settings_with_relogin() -> None:
                               'get_charging_mode_list']
     finally:
         await account.close()
+
+
+async def test_phone_login_uses_the_mainland_server() -> None:
+    server = FakeAnkerCloud()
+    http = FakeHttpClient(server)
+    account = await CloudAccount.login_phone(
+        http, '13800138000', SMS_CODE, connector=FakeMqttConnector(),
+        tls_factory=no_tls, timings=TIMINGS, clock=lambda: NOW)
+    assert account.authentication.server == CN_SERVER
+    devices = await account.bound_devices()
+    assert len(devices) == 2
+    request = http.requests[-1]
+    assert request.host == 'aiot-api-cn.anker.com.cn'
+    assert request.headers['model-type'] == 'PHONE'
+    # No password: a revoked token cannot be replaced automatically.
+    server.revoke(account.authentication.auth_token)
+    with pytest.raises(AuthenticationError):
+        await account.bound_devices()
+
+
+async def test_phone_login_with_a_wrong_code() -> None:
+    http = FakeHttpClient(FakeAnkerCloud())
+    with pytest.raises(AuthenticationError):
+        await CloudAccount.login_phone(http, '13800138000', '000000',
+                                       clock=lambda: NOW)

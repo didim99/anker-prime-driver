@@ -2,18 +2,24 @@
 
 The password is used for one request and never kept by this module; whether
 an embedder stores it for automatic re-login is its own decision.
+
+Mainland China accounts sign in with a phone number and an SMS code on
+their own server (``request_phone_code``, ``login_phone``). Such a login
+cannot be repeated without a new code, so it never re-logs in by itself.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ankerprime.cloud.crypto import LoginCipher
 from ankerprime.cloud.regions import (
-    UNSUPPORTED_REGIONS, home_server, overseas_server, server_for)
+    CN_SERVER, MAINLAND_COUNTRY, PHONE_REGIONS,
+    home_server, known_server, server_for)
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.storage import JsonDocument
 from ankerprime.model.errors import (
@@ -23,6 +29,20 @@ from ankerprime.utils import Clock, parse_json_object, utc_now
 
 
 LOGIN_PATH = '/passport/login'
+PHONE_CODE_PATH = '/passport/phone_verification_code'
+PHONE_LOGIN_PATH = '/passport/phone_verification_login'
+PHONE_NUMBER = re.compile(r'1[0-9]{10}')
+PHONE_CODE = re.compile(r'[0-9]{6}')
+# Mainland server messages can echo the input; these codes get own wording.
+PHONE_ERRORS = {
+    26124: 'this phone number has no Anker account; register it in the '
+           'Anker app and bind the charger first',
+    26008: 'the SMS code could not be sent; try again later',
+    26125: 'the SMS code could not be sent; try again later',
+}
+# Headers the mainland app sends, on top of the common ones.
+MAINLAND_HEADERS = {'model-type': 'PHONE', 'app-version': '3.23.0',
+                    'language': 'zh-Hans', 'x-app-key': 'CN'}
 DOCUMENT_VERSION = 1
 VALIDITY_LEEWAY = timedelta(seconds=60)
 MILLISECOND_EPOCH_THRESHOLD = 100_000_000_000
@@ -100,7 +120,7 @@ class Authentication:
         """
 
         try:
-            server = overseas_server(document['server'])
+            server = known_server(document['server'])
             if server is None or document['version'] != DOCUMENT_VERSION:
                 return None
             expires_at = datetime.fromtimestamp(document['expires_at'], UTC)
@@ -190,6 +210,44 @@ class AccountClient:
             data = await self._post_login(server, body, country)
         return _parse_login(data, country, server)
 
+    async def request_phone_code(self, phone: str) -> None:
+        """Have the mainland server send a login code by SMS to the number.
+
+        One request per call, no retry: every call sends a new SMS.
+        """
+
+        phone = _checked_phone(phone)
+        await self._post_phone(PHONE_CODE_PATH,
+                               {'phone_number': phone, 'kind': 'login'})
+
+    async def login_phone(self, phone: str, code: str) -> Authentication:
+        """Sign in a mainland China account with the SMS code."""
+
+        phone = _checked_phone(phone)
+        code = code.strip()
+        if not PHONE_CODE.fullmatch(code):
+            raise InvalidParameterError('the SMS code has six digits')
+        cipher = LoginCipher()
+        data = await self._post_phone(PHONE_LOGIN_PATH, {
+            'phone_number': phone, 'verify_code': code,
+            'client_secret_info': {'public_key': cipher.public_key_hex}})
+        if not isinstance(data, dict):
+            raise ProtocolError('login response without data')
+        return _parse_login(data, MAINLAND_COUNTRY, CN_SERVER)
+
+    async def _post_phone(self, path: str, body: dict[str, Any]) -> Any:
+        headers = base_headers(MAINLAND_COUNTRY, self._clock())
+        payload = json.dumps(body).encode('utf-8')
+        response = await self._http.post(CN_SERVER + path, headers, payload)
+        if not 200 <= response.status < 300:
+            raise ChargerConnectionError(f'login HTTP {response.status}')
+        root = parse_json_object(response.body)
+        code = root.get('code', -1)
+        if code != 0:
+            message = PHONE_ERRORS.get(code, 'phone login refused')
+            raise AuthenticationError(f'{message} ({code})')
+        return root.get('data')
+
     def _login_body(self, email: str, password: str, country: str) -> bytes:
         cipher = LoginCipher()
         now = self._clock()
@@ -219,11 +277,18 @@ class AccountClient:
 
 
 def base_headers(country: str, now: datetime) -> dict[str, str]:
-    """Headers every Anker API request carries."""
+    """Headers every Anker API request carries.
 
-    return {'content-type': 'application/json', 'model-type': 'DESKTOP',
-            'app-name': 'anker_power', 'os-type': 'android',
-            'country': country, 'timezone': gmt_offset(now)}
+    Mainland China requests carry the mainland app's headers as well.
+    """
+
+    headers = {'content-type': 'application/json', 'model-type': 'DESKTOP',
+               'app-name': 'anker_power', 'os-type': 'android',
+               'country': country, 'timezone': gmt_offset(now)}
+    if country.upper() == MAINLAND_COUNTRY:
+        headers.update(MAINLAND_HEADERS)
+        headers['x-auth-ts'] = str(int(now.timestamp()))
+    return headers
 
 
 def gmt_offset(now: datetime) -> str:
@@ -251,12 +316,21 @@ def parse_expiration(value: object) -> datetime | None:
 
 
 def _validate_login(email: str, password: str, country: str) -> None:
-    if country in UNSUPPORTED_REGIONS:
-        raise InvalidParameterError('mainland China (SMS) login unsupported')
+    if country in PHONE_REGIONS:
+        raise InvalidParameterError('mainland China accounts sign in by '
+                                    'phone number and SMS code')
     if '@' not in email or len(email) < 5:
         raise InvalidParameterError('invalid email address')
     if not password:
         raise InvalidParameterError('empty password')
+
+
+def _checked_phone(phone: str) -> str:
+    phone = phone.strip().removeprefix('+86').strip()
+    if not PHONE_NUMBER.fullmatch(phone):
+        raise InvalidParameterError('a mainland China mobile number has 11 '
+                                    'digits and starts with 1')
+    return phone
 
 
 def _parse_login(data: dict[str, Any], country: str,

@@ -203,6 +203,30 @@ class CloudAccount:
                    on_authentication=on_authentication,
                    energy_store=energy_store, timings=timings, clock=clock)
 
+    @classmethod
+    async def login_phone(cls, http: HttpClient, phone: str, code: str, *,
+                          connector: MqttConnector | None = None,
+                          tls_factory: TlsFactory | None = None,
+                          tls_directory: Path | None = None,
+                          on_authentication: AuthenticationListener
+                          | None = None,
+                          energy_store: DocumentStore | None = None,
+                          timings: A2345Timings | None = None,
+                          clock: Clock | None = None) -> CloudAccount:
+        """Sign in a mainland China account with an SMS code.
+
+        Request the code first with ``AccountClient.request_phone_code``.
+        Without a password there is no automatic re-login: an expired or
+        revoked token raises ``AuthenticationError`` and needs a new code.
+        """
+
+        client = AccountClient(http, clock)
+        authentication = await client.login_phone(phone, code)
+        return cls(http, authentication, connector=connector,
+                   tls_factory=tls_factory, tls_directory=tls_directory,
+                   on_authentication=on_authentication,
+                   energy_store=energy_store, timings=timings, clock=clock)
+
 
 class _AccountCharger(ChargerAccount):
     """Account-side settings of one charger, with the account's re-login."""

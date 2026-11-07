@@ -7,7 +7,8 @@ as a test tool for real chargers.
 - [Global options](#global-options)
 - [Configuration folder](#configuration-folder)
 - [Choosing a charger](#choosing-a-charger)
-- [Account commands](#account-commands): `login`, `logout`, `regions`, `devices`
+- [Account commands](#account-commands): `login`, `login-phone`, `logout`,
+  `regions`, `devices`
 - [Charger management](#charger-management): `scan`, `charger`
 - [Reading](#reading): `status`, `monitor`
 - [Control](#control): `output`, `countdown`, `schedule`, `mode`, `priority`,
@@ -95,8 +96,7 @@ this tool, with the charger shared to it, keeps the app's login untouched.
 
 Signs in and stores the login. Asks for the password; `--password-stdin`
 reads it from standard input instead. The country decides Anker's server
-(`regions` lists the codes; mainland China needs an SMS login, which is not
-supported).
+(`regions` lists the codes; mainland China signs in with `login-phone`).
 
 `--no-save-password` stores only the token: when it expires, sign in again.
 Otherwise the credentials are kept and an expired token is renewed
@@ -105,6 +105,21 @@ automatically.
 ```bash
 ankerprime login you@example.com DE
 echo "$PASSWORD" | ankerprime login you@example.com DE --password-stdin
+```
+
+### `login-phone NUMBER`
+
+Signs in a mainland China account (11-digit mobile number) with an SMS code:
+sends the code, asks for it and stores the token. `--code-stdin` reads the
+code from standard input; `--send-only` only sends it and `--code CODE` signs
+in with it later. There is no password to keep, so when the token expires or
+is revoked, sign in again with a new code. Custom profiles of such an account
+use the mainland limits and protocols.
+
+```bash
+ankerprime login-phone 13800138000
+ankerprime login-phone 13800138000 --send-only
+ankerprime login-phone 13800138000 --code 123456
 ```
 
 ### `logout`

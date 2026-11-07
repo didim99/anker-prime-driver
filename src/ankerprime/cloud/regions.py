@@ -88,8 +88,9 @@ REGIONS = {
     'ZA': 'South Africa',
 }
 
-# Mainland China signs in by SMS code, which this library does not support.
-UNSUPPORTED_REGIONS = frozenset({'CN'})
+# Mainland China signs in by SMS code on its own server, never by email.
+MAINLAND_COUNTRY = 'CN'
+PHONE_REGIONS = frozenset({MAINLAND_COUNTRY})
 
 
 def is_known_region(code: str) -> bool:
@@ -100,7 +101,7 @@ def server_for(country: str) -> str:
     """Return the API server of a country code; unknown codes use EU."""
 
     country = country.upper()
-    if country == 'CN':
+    if country == MAINLAND_COUNTRY:
         return CN_SERVER
     return COM_SERVER if country in COM_COUNTRIES else EU_SERVER
 
@@ -119,6 +120,18 @@ def overseas_server(domain: str | None) -> str | None:
         domain = f'https://{domain}'
     domain = domain.rstrip('/')
     return domain if domain in OVERSEAS_SERVERS else None
+
+
+def known_server(domain: str | None) -> str | None:
+    """Like ``overseas_server``, also accepting the mainland China server.
+
+    For stored tokens: a phone login lives on the mainland server, which an
+    email login response may never redirect to.
+    """
+
+    if domain is not None and domain.strip().lower().rstrip('/') == CN_SERVER:
+        return CN_SERVER
+    return overseas_server(domain)
 
 
 def home_server(domain: str | None, account_country: str | None) -> str | None:

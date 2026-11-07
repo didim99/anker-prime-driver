@@ -9,7 +9,9 @@ clock pictures, and energy counters.
 > **Status: alpha.** The 250W cloud connection, energy counters and the
 > command-line tool are tested on real hardware and used daily in Home
 > Assistant. 160W (Bluetooth) support is implemented but untested on a real
-> charger. The API may still change before 1.0.
+> charger, as are the features added in 0.8.0 (custom charging, clock and
+> screen pictures, mainland China login). The API may still change before
+> 1.0.
 
 This is an unofficial project, not affiliated with or endorsed by Anker. For
 Home Assistant, see [ha-anker-prime](https://github.com/didim99/ha-anker-prime),
@@ -17,17 +19,17 @@ which is built on this library.
 
 ## Supported chargers
 
-| Model | Name                     | Connection                              | Verified on hardware             |
+| Model | Name                     | Connection                              | Verified on hardware              |
 |-------|--------------------------|-----------------------------------------|-----------------------------------|
 | A2345 | Anker Prime Charger 250W | Anker cloud (account + MQTT over Wi-Fi) | everything except the UFCS switch |
-| A2687 | Anker Prime 160W         | Bluetooth LE (local)                    | display settings (by Charker)    |
+| A2687 | Anker Prime 160W         | Bluetooth LE (local)                    | display settings (by Charker)     |
 
-The 250W must be bound to an Anker account in the Anker app; accounts of
-mainland China (SMS login) are not supported. The 160W accepts one Bluetooth
-connection at a time, so the Anker app cannot reach it while the library is
-connected. Unverified features are marked experimental: they follow the known
-protocol but are not yet confirmed on that model. A local connection for the
-250W may follow later without changes for library users.
+The 250W must be bound to an Anker account in the Anker app; mainland China
+accounts sign in with a phone number and an SMS code. The 160W accepts one
+Bluetooth connection at a time, so the Anker app cannot reach it while the
+library is connected. Unverified features are marked experimental: they follow
+the known protocol but are not yet confirmed on that model. A local connection
+for the 250W may follow later without changes for library users.
 
 ## Installation
 
