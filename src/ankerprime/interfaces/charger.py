@@ -121,7 +121,10 @@ class Charger(ABC):
     @abstractmethod
     async def set_preferred_outputs(self, outputs: Collection[OutputId]
                                     ) -> None:
-        """Choose the preferred outputs of the port-priority mode."""
+        """Choose the preferred outputs of the port-priority mode.
+
+        The 250W switches to the port-priority mode with this write.
+        """
 
         pass
 

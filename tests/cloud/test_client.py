@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from ankerprime.cloud.client import (
-    CERTIFICATE_LABELS, BoundDevice, CloudClient, normalize_pem)
+    CERTIFICATE_LABELS, BoundDevice, CloudClient, normalize_pem, storage_error)
 from ankerprime.cloud.regions import EU_SERVER
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
@@ -158,3 +158,23 @@ def test_normalize_pem_rewraps_long_bodies() -> None:
     pem = normalize_pem(text, CERTIFICATE_LABELS)
     assert pem is not None
     assert [len(line) for line in pem.splitlines()[1:-1]] == [64, 64, 32]
+
+
+def test_storage_error_keeps_code_and_message_only() -> None:
+    body = (b'<?xml version="1.0"?><Error><Code>InvalidToken</Code>'
+            b'<Message>The provided token is malformed.</Message>'
+            b'<Key>anker_power/edge/secret/path.jpg</Key>'
+            b'<RequestId>ABC</RequestId></Error>')
+    assert (storage_error(body)
+            == 'InvalidToken: The provided token is malformed.')
+    assert storage_error(b'') is None
+    assert storage_error(b'<html>Bad Request</html>') is None
+
+
+async def test_failed_upload_names_the_storage_error() -> None:
+    body = b'<Error><Code>BadDigest</Code><Message>no</Message></Error>'
+    http = FakeHttpClient(lambda _: HttpResponse(400, body))
+    client = CloudClient(http, make_authentication(USER_ID), lambda: NOW)
+    with pytest.raises(ChargerConnectionError,
+                       match='upload HTTP 400: BadDigest: no'):
+        await client.upload('https://upload/x', b'jpeg', 'binary/octet-stream')

@@ -119,7 +119,12 @@ async def test_charging_mode(charger: Charger) -> None:
 
 
 async def test_preferred_outputs(charger: Charger) -> None:
+    """The write also switches to the port-priority mode: both restored."""
+
     need(charger, Capability.PORT_PRIORITY)
+    mode = charger.state.settings.charging_mode
+    if mode in (None, ChargingMode.CUSTOM):
+        pytest.skip('custom mode in use; the mode could not be restored')
 
     def preferred(state: ChargerState) -> set[OutputId]:
         return {output for output, control in state.outputs.items()
@@ -135,8 +140,12 @@ async def test_preferred_outputs(charger: Charger) -> None:
                      'the new preferred outputs')
     finally:
         await charger.set_preferred_outputs(original)
-    await expect(charger, lambda s: preferred(s) == original,
-                 'the original preferred outputs')
+        state = await settled(charger)
+        if state.settings.charging_mode != mode:
+            await charger.set_charging_mode(mode)
+    await expect(charger, lambda s: preferred(s) == original
+                 and s.settings.charging_mode == mode,
+                 'the original preferred outputs and mode')
 
 
 # Display.

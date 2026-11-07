@@ -48,3 +48,19 @@ async def test_put_sends_the_body() -> None:
         response = await client.put(str(server.make_url('/upload')),
                                     {'x-test': '1'}, b'\xff\xd8jpeg')
         assert (response.status, response.body) == (201, b'\xff\xd8jpeg')
+
+
+async def query(request: web.Request) -> web.Response:
+    return web.Response(text=request.raw_path)
+
+
+async def test_put_keeps_a_signed_link_byte_for_byte() -> None:
+    app = web.Application()
+    app.router.add_put('/upload', query)
+    signed = ('/upload?X-Amz-Credential=AKIA%2F20261107%2Fus-east-2'
+              '&X-Amz-Security-Token=ab%2Bcd%2Fef%3D%3D&X-Amz-Signature=00')
+    async with TestServer(app) as server, aiohttp.ClientSession() as session:
+        client = AiohttpClient(session)
+        url = str(server.make_url('/')).rstrip('/') + signed
+        response = await client.put(url, {}, b'x')
+    assert response.body.decode() == signed

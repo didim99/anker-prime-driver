@@ -99,6 +99,14 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
   `model.account`
   (still exported from `ankerprime.model`); CLI commands with actions share
   one base.
+- `AiohttpClient` sends URLs exactly as given, so signed upload links keep
+  their escapes; a failed upload names the storage service's error code and
+  message.
+- 250W: the debug log names every message type sent and received (except
+  telemetry) and acknowledgements that match no pending write.
+- 250W: writing the preferred outputs switches the charger to the
+  port-priority mode (seen on hardware); documented in `Charger` and the
+  CLI reference.
 
 ## [0.7.3] - 2026-11-07
 

@@ -307,11 +307,15 @@ class A2345Device(RunningCharger, ChannelListener):
 
     def on_message(self, data: bytes) -> None:
         try:
-            message = decode_message(decode_frame(data))
+            frame = decode_frame(data)
+            message = decode_message(frame)
         except ProtocolError as error:
             logger.debug('ignored frame from %s: %s',
                          self._label, error)
             return
+        if not isinstance(message, RealtimeTelemetry):
+            logger.debug('received %#06x from %s', frame.message_type,
+                         self._label)
         if isinstance(message, WriteAcknowledgement):
             self._resolve(message)
             return
@@ -687,6 +691,8 @@ class A2345Device(RunningCharger, ChannelListener):
             if not pending.future.done() and pending.command.matches(ack):
                 pending.future.set_result(ack)
                 return
+        logger.debug('ack %#06x (status %s) from %s matches no pending write',
+                     ack.message_type, ack.status, self._label)
         # Acks reach every client; another one changed something.
         if self._channel.is_open and not ack.rejected:
             self._schedule_readback(include_theme=True)
@@ -708,6 +714,7 @@ class A2345Device(RunningCharger, ChannelListener):
             pass
 
     async def _send(self, command: Command) -> None:
+        logger.debug('sending %#06x to %s', command.message_type, self._label)
         timestamp = self._timestamp()
         try:
             await self._channel.send(command.encode(timestamp))

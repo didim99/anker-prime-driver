@@ -121,9 +121,13 @@ async def find_picture(charger: Charger, theme: ClockTheme | None,
 
 
 async def restore_clock(charger: Charger, original: ClockSettings) -> None:
-    """Put back the clock as found: theme or picture, switch, extras."""
+    """Put back the clock as found: theme or picture, switch, extras.
 
-    clock = charger.state.settings.clock
+    Compares with a fresh snapshot: a write that failed may still have been
+    applied.
+    """
+
+    clock = (await settled(charger)).settings.clock
     assert clock is not None
     if original.theme in PICTURE_THEMES and original.picture_id is not None:
         if (clock.theme != original.theme
@@ -152,10 +156,11 @@ async def restore_switches(charger: Charger, max_compatibility: bool,
     """Put back the two exclusive switches.
 
     Switching one on switches the other off, so the one that was on goes
-    last; with both off, each is switched off.
+    last; with both off, each is switched off. Compares with a fresh read,
+    as a failed write may still have been applied.
     """
 
-    settings = charger.state.settings
+    settings = (await settled(charger, account=True)).settings
     if max_compatibility:
         await charger.set_max_compatibility(True)
     elif device_identification:

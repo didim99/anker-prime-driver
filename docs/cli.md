@@ -215,7 +215,7 @@ ports share one switch). The 160W has `c1`…`c3`.
 | `countdown`      | `OUTPUT DURATION\|cancel`                                | both   | switch the output off after `90`, `15m`, `1h30m` … (up to 24 h), or cancel                       |
 | `schedule`       | `OUTPUT on\|off HH:MM [--days DAYS] [--disable]`         | 250W   | daily power-on or power-off time; `--disable` stores the slot switched off                       |
 | `mode`           | `MODE`                                                   | both   | charging mode; 250W: `ai`, `port_priority`, `dual_laptop`, `low_current`; 160W: `ai`, `standard` |
-| `priority`       | `[OUTPUT ...]`                                           | 250W   | up to two preferred USB-C outputs of the port-priority mode; none clears                         |
+| `priority`       | `[OUTPUT ...]`                                           | 250W   | up to two preferred USB-C outputs; switches to the port-priority mode; none clears               |
 | `allocation`     | `c1_priority\|dual_laptop`                               | 160W   | fixed allocation of the standard mode                                                            |
 | `display`        | options below                                            | both   | display settings                                                                                 |
 | `clock`          | `on\|off [--theme THEME]`                                | 250W   | clock screensaver; themes `style_1`…`style_3`                                                    |

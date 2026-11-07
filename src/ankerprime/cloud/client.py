@@ -34,6 +34,11 @@ PEM_LINE_LENGTH = 64
 TOPIC_COMPONENT = re.compile(r'[A-Za-z0-9_-]+')
 MQTT_HOST = re.compile(r'[A-Za-z0-9.-]+')
 
+STORAGE_ERROR_BYTES = 4096
+STORAGE_ERROR_LENGTH = 200
+STORAGE_ERROR_CODE = re.compile(r'<Code>([^<]{1,100})</Code>')
+STORAGE_ERROR_MESSAGE = re.compile(r'<Message>([^<]{1,300})</Message>')
+
 
 @dataclass(init=False)
 class BoundDevice:
@@ -288,7 +293,10 @@ class CloudClient:
                    'content-length': str(len(body))}
         response = await self._http.put(url, headers, body)
         if response.status != 200:
-            raise ChargerConnectionError(f'upload HTTP {response.status}')
+            reason = storage_error(response.body)
+            detail = f': {reason}' if reason else ''
+            raise ChargerConnectionError(
+                f'upload HTTP {response.status}{detail}')
 
     async def _post(self, path: str) -> dict[str, Any]:
         data = await self.request(path)
@@ -335,3 +343,21 @@ def _checked_path(path: str) -> str:
             or '?' in path or '#' in path):
         raise ProtocolError(f'invalid API path: {path}')
     return path
+
+
+def storage_error(body: bytes) -> str | None:
+    """``Code: Message`` of an object storage (S3-style) XML error answer.
+
+    Only these two elements are kept, shortened; the rest of the answer can
+    name the request and the account's storage path.
+    """
+
+    text = body[:STORAGE_ERROR_BYTES].decode('utf-8', 'replace')
+    code = STORAGE_ERROR_CODE.search(text)
+    if code is None:
+        return None
+    message = STORAGE_ERROR_MESSAGE.search(text)
+    reason = code.group(1).strip()
+    if message is not None:
+        reason += f': {message.group(1).strip()}'
+    return reason[:STORAGE_ERROR_LENGTH]

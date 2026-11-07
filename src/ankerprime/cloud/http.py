@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 
 import aiohttp
+from yarl import URL
 
 from ankerprime.interfaces.http import HttpClient, HttpResponse
 from ankerprime.model.errors import ChargerConnectionError
@@ -33,6 +34,8 @@ class AiohttpClient(HttpClient):
 
     async def put(self, url: str, headers: Mapping[str, str],
                   body: bytes) -> HttpResponse:
+        """PUT to a signed link, sent exactly as given (no re-quoting)."""
+
         timeout = aiohttp.ClientTimeout(total=max(self._timeout.total or 0,
                                                   UPLOAD_TIMEOUT))
         return await self._send('PUT', url, headers, body, timeout)
@@ -40,9 +43,12 @@ class AiohttpClient(HttpClient):
     async def _send(self, method: str, url: str, headers: Mapping[str, str],
                     body: bytes, timeout: aiohttp.ClientTimeout
                     ) -> HttpResponse:
+        # A signed link is valid only byte for byte; yarl would otherwise
+        # normalize its percent-escapes.
+        target = URL(url, encoded=True)
         try:
             async with self._session.request(
-                    method, url, headers=dict(headers), data=body,
+                    method, target, headers=dict(headers), data=body,
                     allow_redirects=False, timeout=timeout) as response:
                 return HttpResponse(response.status, await response.read())
         except (aiohttp.ClientError, TimeoutError) as error:
