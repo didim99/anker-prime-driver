@@ -53,6 +53,7 @@ ankerprime output c1 off
   configuration folder, charger selection, exit codes.
 - [Library overview](docs/library.md): usage examples, layers, the `Charger`
   interface, state model, connection behavior, energy counters, errors.
+- [Changelog](changelog.md).
 
 ## Development
 
