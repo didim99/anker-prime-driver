@@ -19,34 +19,14 @@ from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
     KNOB_DIRECTION_CODES, SCHEDULE_SLOT_CODES, GROUPS,
     SCREEN_TIMEOUT_CODES, USB_C_GROUPS, group_code)
-from ankerprime.protocol.a2345.frame import CLOUD_SESSION, encode_request
+from ankerprime.protocol.a2345.frame import (
+    CLOUD_SESSION, MessageType, encode_request)
 from ankerprime.protocol.a2345.settings import (
     ACK_PREFIX, CUSTOM_CHARGING_MODE_CODE, CustomProfile, PortProtocol)
 from ankerprime.protocol.a2345.updates import WriteAcknowledgement
 from ankerprime.protocol.codes import encode_value
 from ankerprime.utils import u32le
 
-
-MSG_STATUS_SNAPSHOT_REQUEST = 0x0200
-MSG_THEME_STATUS_REQUEST = 0x0202
-MSG_SCREEN_TIMEOUT = 0x0203
-MSG_BRIGHTNESS = 0x0204
-MSG_CLOCK_THEME = 0x0205
-MSG_CHARGING_MODE = 0x0206
-MSG_OUTPUT_SWITCH = 0x0207
-MSG_SCHEDULE = 0x0208
-MSG_COUNTDOWN = 0x0209
-MSG_REALTIME_TRIGGER = 0x020B
-MSG_PORT_PRIORITY = 0x020C
-MSG_KNOB_DIRECTION = 0x020E
-MSG_HOLIDAY_THEME = 0x020F
-MSG_HOUR_FORMAT = 0x0210
-MSG_EXIT_CUSTOM_MODE = 0x0211
-MSG_CLOCK_SCHEDULE = 0x0213
-MSG_MAX_COMPATIBILITY = 0x0214
-MSG_UFCS = 0x0215
-MSG_IMAGE_TIME_DISPLAY = 0x0222
-MSG_DEVICE_IDENTIFICATION = 0x0223
 
 MAX_COUNTDOWN = 86_400
 BRIGHTNESS_MIN = 20
@@ -68,11 +48,11 @@ class Command:
     """One encodable request and how to recognise its acknowledgement."""
 
     READ_TYPES: ClassVar[frozenset[int]] = frozenset({
-        MSG_STATUS_SNAPSHOT_REQUEST, MSG_THEME_STATUS_REQUEST,
-        MSG_REALTIME_TRIGGER})
+        MessageType.STATUS_SNAPSHOT_REQUEST, MessageType.THEME_STATUS_REQUEST,
+        MessageType.REALTIME_TRIGGER})
     # Reads answered by their data message instead of an ack.
     DATA_ANSWERED_TYPES: ClassVar[frozenset[int]] = frozenset({
-        MSG_STATUS_SNAPSHOT_REQUEST, MSG_THEME_STATUS_REQUEST})
+        MessageType.STATUS_SNAPSHOT_REQUEST, MessageType.THEME_STATUS_REQUEST})
 
     _message_type: int
     _fields: Mapping[int, bytes]
@@ -137,24 +117,24 @@ class Command:
 def status_snapshot() -> Command:
     """Request a full ``0x0A00`` snapshot."""
 
-    return Command(MSG_STATUS_SNAPSHOT_REQUEST, {})
+    return Command(MessageType.STATUS_SNAPSHOT_REQUEST, {})
 
 
 def theme_status() -> Command:
     """Request the ``0x0A02`` clock theme state the snapshot leaves out."""
 
-    return Command(MSG_THEME_STATUS_REQUEST, {})
+    return Command(MessageType.THEME_STATUS_REQUEST, {})
 
 
 def realtime_trigger() -> Command:
     """Start a 10-second window of ``0x0303`` realtime messages."""
 
-    return Command(MSG_REALTIME_TRIGGER, {})
+    return Command(MessageType.REALTIME_TRIGGER, {})
 
 
 def set_output(output: OutputId, on: bool) -> Command:
     fields = {0xA2: _u8(group_code(output)), 0xA3: _u8(on)}
-    return Command(MSG_OUTPUT_SWITCH, fields, output=output)
+    return Command(MessageType.OUTPUT_SWITCH, fields, output=output)
 
 
 def set_schedule(output: OutputId, slot: ScheduleSlot,
@@ -165,7 +145,7 @@ def set_schedule(output: OutputId, slot: ScheduleSlot,
                    int(schedule.weekdays) & 0x7F))
     fields = {0xA2: _u8(group_code(output)),
               0xA3: _u8(SCHEDULE_SLOT_CODES[slot]), 0xA4: value}
-    return Command(MSG_SCHEDULE, fields, output=output, slot=slot)
+    return Command(MessageType.SCHEDULE, fields, output=output, slot=slot)
 
 
 def set_countdown(output: OutputId, enabled: bool, seconds: int) -> Command:
@@ -179,7 +159,7 @@ def set_countdown(output: OutputId, enabled: bool, seconds: int) -> Command:
         raise InvalidParameterError(f'countdown out of range: {seconds}')
     value = _u8(enabled) + u32le(seconds)
     fields = {0xA2: _u8(group_code(output)), 0xA3: value}
-    return Command(MSG_COUNTDOWN, fields, output=output)
+    return Command(MessageType.COUNTDOWN, fields, output=output)
 
 
 def set_charging_mode(mode: ChargingMode) -> Command:
@@ -188,7 +168,7 @@ def set_charging_mode(mode: ChargingMode) -> Command:
     if mode == ChargingMode.CUSTOM:
         raise InvalidParameterError('custom mode needs a profile')
     code = encode_value(CHARGING_MODE_CODES, mode)
-    return Command(MSG_CHARGING_MODE, {0xA2: _u8(code)})
+    return Command(MessageType.CHARGING_MODE, {0xA2: _u8(code)})
 
 
 def set_custom_charging_mode(profile: CustomProfile,
@@ -208,7 +188,7 @@ def set_custom_charging_mode(profile: CustomProfile,
             raise InvalidParameterError('protocols needed for C1–C4')
         fields[0xA4] = b''.join(bytes((flags & 0x7F, 0, 0))
                                 for flags in protocols)
-    return Command(MSG_CHARGING_MODE, fields)
+    return Command(MessageType.CHARGING_MODE, fields)
 
 
 def apply_custom_profile(profile: ChargingProfile, *, mainland: bool,
@@ -251,7 +231,7 @@ def port_protocols(profile: ChargingProfile, output: OutputId,
 
 
 def exit_custom_charging_mode() -> Command:
-    return Command(MSG_EXIT_CUSTOM_MODE, {0xA2: _u8(0)})
+    return Command(MessageType.EXIT_CUSTOM_MODE, {0xA2: _u8(0)})
 
 
 def set_preferred_outputs(outputs: Collection[OutputId]) -> Command:
@@ -264,12 +244,12 @@ def set_preferred_outputs(outputs: Collection[OutputId]) -> Command:
         if output not in USB_C_GROUPS:
             raise InvalidParameterError(f'{output} cannot be preferred')
         bitmap |= 1 << USB_C_GROUPS.index(output)
-    return Command(MSG_PORT_PRIORITY, {0xA2: _u8(bitmap)})
+    return Command(MessageType.PORT_PRIORITY, {0xA2: _u8(bitmap)})
 
 
 def set_screen_timeout(timeout: ScreenTimeout) -> Command:
     code = encode_value(SCREEN_TIMEOUT_CODES, timeout)
-    return Command(MSG_SCREEN_TIMEOUT, {0xA2: _u8(code)})
+    return Command(MessageType.SCREEN_TIMEOUT, {0xA2: _u8(code)})
 
 
 def set_brightness(percent: int) -> Command:
@@ -278,28 +258,28 @@ def set_brightness(percent: int) -> Command:
     if (not BRIGHTNESS_MIN <= percent <= BRIGHTNESS_MAX
             or percent % BRIGHTNESS_STEP):
         raise InvalidParameterError(f'brightness out of range: {percent}')
-    return Command(MSG_BRIGHTNESS, {0xA2: _u8(percent)})
+    return Command(MessageType.BRIGHTNESS, {0xA2: _u8(percent)})
 
 
 def set_knob_direction(direction: KnobDirection) -> Command:
     code = encode_value(KNOB_DIRECTION_CODES, direction)
-    return Command(MSG_KNOB_DIRECTION, {0xA2: _u8(code)})
+    return Command(MessageType.KNOB_DIRECTION, {0xA2: _u8(code)})
 
 
 def set_hour_format(hour_format: HourFormat) -> Command:
     code = encode_value(HOUR_FORMAT_CODES, hour_format)
-    return Command(MSG_HOUR_FORMAT, {0xA2: _u8(code)})
+    return Command(MessageType.HOUR_FORMAT, {0xA2: _u8(code)})
 
 
 def set_clock_schedule(schedule: ClockSchedule) -> Command:
     value = bytes((schedule.start_hour, schedule.start_minute,
                    schedule.end_hour, schedule.end_minute,
                    int(schedule.weekdays) & 0x7F))
-    return Command(MSG_CLOCK_SCHEDULE, {0xA2: value})
+    return Command(MessageType.CLOCK_SCHEDULE, {0xA2: value})
 
 
 def set_holiday_theme(enabled: bool) -> Command:
-    return Command(MSG_HOLIDAY_THEME, {0xA2: _u8(enabled)})
+    return Command(MessageType.HOLIDAY_THEME, {0xA2: _u8(enabled)})
 
 
 def set_clock_theme(clock_on: bool, theme: ClockTheme, *,
@@ -328,12 +308,12 @@ def set_clock_theme(clock_on: bool, theme: ClockTheme, *,
         if len(encoded) > MAX_CUSTOM_URL_LENGTH:
             raise InvalidParameterError('custom picture URL too long')
         fields[0xA7] = encoded
-        return Command(MSG_CLOCK_THEME, fields, allow_long_fields=True)
+        return Command(MessageType.CLOCK_THEME, fields, allow_long_fields=True)
     encoded = url.encode('utf-8')
     if len(encoded) > MAX_URL_LENGTH:
         raise InvalidParameterError('theme URL too long')
     fields[0xA6] = encoded
-    return Command(MSG_CLOCK_THEME, fields)
+    return Command(MessageType.CLOCK_THEME, fields)
 
 
 def builtin_theme_url(theme: ClockTheme) -> str:
@@ -346,23 +326,23 @@ def builtin_theme_url(theme: ClockTheme) -> str:
 def set_image_time_display(enabled: bool) -> Command:
     """Show the time over a custom clock picture."""
 
-    return Command(MSG_IMAGE_TIME_DISPLAY, {0xA2: _u8(enabled)})
+    return Command(MessageType.IMAGE_TIME_DISPLAY, {0xA2: _u8(enabled)})
 
 
 def set_max_compatibility(enabled: bool) -> Command:
     """Toggle maximum compatibility; the wire value is inverted."""
 
-    return Command(MSG_MAX_COMPATIBILITY, {0xA2: _u8(not enabled)})
+    return Command(MessageType.MAX_COMPATIBILITY, {0xA2: _u8(not enabled)})
 
 
 def set_device_identification(enabled: bool) -> Command:
-    return Command(MSG_DEVICE_IDENTIFICATION, {0xA2: _u8(enabled)})
+    return Command(MessageType.DEVICE_IDENTIFICATION, {0xA2: _u8(enabled)})
 
 
 def set_ufcs(enabled: bool) -> Command:
     """Toggle UFCS on mainland firmware without protocol management."""
 
-    return Command(MSG_UFCS, {0xA2: _u8(enabled)})
+    return Command(MessageType.UFCS, {0xA2: _u8(enabled)})
 
 
 def _check_custom_profile(profile: CustomProfile) -> None:

@@ -14,9 +14,7 @@ from ankerprime.model.errors import (
     AuthenticationError, ChargerConnectionError, ChargerTimeoutError,
     InvalidParameterError, UnsupportedCapabilityError, WriteRejectedError)
 from ankerprime.model.state import DeviceInfo
-from ankerprime.protocol.a2687.codes import (
-    OP_BIND_SUCCESS, OP_BRIGHTNESS, OP_CHARGING_MODE,
-    OP_PORT_TIMER, OP_READ_ALL, OP_REALTIME_TRIGGER, OP_USER_AUTH)
+from ankerprime.protocol.a2687.codes import Opcode
 from ankerprime.session.a2687 import A2687Session
 from tests.device.a2687_charger import SimulatedCharger, SimulatedLink
 from tests.device.timings import A2687_FAST
@@ -74,10 +72,10 @@ async def test_connect_negotiates_and_reports(device: A2687Device,
                                               ) -> None:
     await connected(device)
     session_requests = [opcode for opcode in charger.opcodes()
-                        if opcode >= OP_READ_ALL]
-    assert session_requests[:3] == [OP_READ_ALL, OP_BIND_SUCCESS,
-                                    OP_REALTIME_TRIGGER]
-    bind = dict(charger.requests)[OP_BIND_SUCCESS]
+                        if opcode >= Opcode.READ_ALL]
+    assert session_requests[:3] == [Opcode.READ_ALL, Opcode.BIND_SUCCESS,
+                                    Opcode.REALTIME_TRIGGER]
+    bind = dict(charger.requests)[Opcode.BIND_SUCCESS]
     assert bind.get(0xA2) == b'\x04DE'
     state = device.state
     assert state.info.serial == 'ASHDMOCK00000000'
@@ -98,7 +96,7 @@ async def test_owner_id_is_used_for_auth_and_probe(link: SimulatedLink,
     device = make_device(link, owner_id='owner-1')
     try:
         await connected(device)
-        bind = dict(charger.requests)[OP_BIND_SUCCESS]
+        bind = dict(charger.requests)[Opcode.BIND_SUCCESS]
         assert bind.get(0xA3) == b'\x04owner-1'
     finally:
         await device.disconnect()
@@ -110,8 +108,8 @@ async def test_polls_while_connected(device: A2687Device,
     charger.requests.clear()
     await asyncio.sleep(0.25)
     opcodes = charger.opcodes()
-    assert opcodes.count(OP_BIND_SUCCESS) >= 3
-    assert 1 <= opcodes.count(OP_READ_ALL) < opcodes.count(OP_BIND_SUCCESS)
+    assert opcodes.count(Opcode.BIND_SUCCESS) >= 3
+    assert 1 <= opcodes.count(Opcode.READ_ALL) < opcodes.count(Opcode.BIND_SUCCESS)
 
 
 async def test_readings_go_stale_and_silent_link_is_recycled(
@@ -156,7 +154,7 @@ async def test_refused_identity_without_data_stops(
         opens = link.opens
         await asyncio.sleep(0.1)
         assert link.opens == opens
-        assert OP_USER_AUTH in charger.opcodes()
+        assert Opcode.USER_AUTH in charger.opcodes()
     finally:
         await device.disconnect()
 
@@ -188,7 +186,7 @@ async def test_refused_writes_raise(device: A2687Device,
     with pytest.raises(WriteRejectedError) as caught:
         await device.set_output(OutputId.C3, True)
     assert caught.value.status == 3
-    charger.refused_writes[OP_BRIGHTNESS] = 0x11
+    charger.refused_writes[Opcode.BRIGHTNESS] = 0x11
     with pytest.raises(WriteRejectedError):
         await device.set_brightness(50)
 
@@ -196,7 +194,7 @@ async def test_refused_writes_raise(device: A2687Device,
 async def test_unanswered_write_times_out(device: A2687Device,
                                           charger: SimulatedCharger) -> None:
     await connected(device)
-    charger.silent.add(OP_CHARGING_MODE)
+    charger.silent.add(Opcode.CHARGING_MODE)
     with pytest.raises(ChargerTimeoutError):
         await device.set_charging_mode(ChargingMode.STANDARD)
 
@@ -232,7 +230,7 @@ async def test_countdown(device: A2687Device,
     assert countdown is not None and countdown.total == 600
     await device.cancel_countdown(OutputId.C2)
     assert charger.ports[1].countdown == 0
-    assert charger.opcodes().count(OP_PORT_TIMER) == 2
+    assert charger.opcodes().count(Opcode.PORT_TIMER) == 2
 
 
 async def test_invalid_and_unsupported(device: A2687Device) -> None:
@@ -266,7 +264,7 @@ async def test_refresh_reads_everything(device: A2687Device,
     await connected(device)
     charger.requests.clear()
     await device.refresh()
-    assert OP_READ_ALL in charger.opcodes()
+    assert Opcode.READ_ALL in charger.opcodes()
 
 
 async def test_on_demand_reads_periodically_and_disconnects(
@@ -302,7 +300,7 @@ async def test_on_demand_commands_open_the_link(
 
 async def test_on_demand_first_read_failure_is_raised(
         link: SimulatedLink, charger: SimulatedCharger) -> None:
-    charger.silent.update({OP_READ_ALL, OP_REALTIME_TRIGGER})
+    charger.silent.update({Opcode.READ_ALL, Opcode.REALTIME_TRIGGER})
     device = make_device(link, keep_connection=False)
     try:
         with pytest.raises(ChargerTimeoutError):

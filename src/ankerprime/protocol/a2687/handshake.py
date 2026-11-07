@@ -13,10 +13,7 @@ from enum import IntEnum
 
 from ankerprime.model.errors import AnkerPrimeError, ProtocolError
 from ankerprime.model.state import DeviceInfo
-from ankerprime.protocol.a2687.codes import (
-    FIELD_A1, FIELD_A2, FIELD_A3, FIELD_A4, FIELD_A5, FIELD_A6,
-    OP_AES_METADATA, OP_BASE_INFO, OP_CAPABILITY, OP_INITIAL_CONNECT,
-    OP_PUBLIC_KEY, OP_SET_CAPABILITY, OP_USER_AUTH)
+from ankerprime.protocol.a2687.codes import FieldId, Opcode
 from ankerprime.protocol.a2687.commands import (
     Encryption, OutgoingMessage, negotiation)
 from ankerprime.protocol.a2687.crypto import EphemeralKey, SessionKeys
@@ -50,13 +47,13 @@ class HandshakeStage(IntEnum):
 
 
 AWAITED_OPCODES = {
-    HandshakeStage.INITIAL_CONNECT: OP_INITIAL_CONNECT,
-    HandshakeStage.CAPABILITY: OP_CAPABILITY,
-    HandshakeStage.BASE_INFO: OP_BASE_INFO,
-    HandshakeStage.SET_CAPABILITY: OP_SET_CAPABILITY,
-    HandshakeStage.PUBLIC_KEY: OP_PUBLIC_KEY,
-    HandshakeStage.AES_METADATA: OP_AES_METADATA,
-    HandshakeStage.USER_AUTH: OP_USER_AUTH,
+    HandshakeStage.INITIAL_CONNECT: Opcode.INITIAL_CONNECT,
+    HandshakeStage.CAPABILITY: Opcode.CAPABILITY,
+    HandshakeStage.BASE_INFO: Opcode.BASE_INFO,
+    HandshakeStage.SET_CAPABILITY: Opcode.SET_CAPABILITY,
+    HandshakeStage.PUBLIC_KEY: Opcode.PUBLIC_KEY,
+    HandshakeStage.AES_METADATA: Opcode.AES_METADATA,
+    HandshakeStage.USER_AUTH: Opcode.USER_AUTH,
 }
 SKIPPABLE_STAGES = (HandshakeStage.AES_METADATA, HandshakeStage.USER_AUTH)
 
@@ -147,8 +144,8 @@ class HandshakeEngine:
     def start(self, timestamp: int) -> OutgoingMessage:
         self._stage = HandshakeStage.INITIAL_CONNECT
         self._key = EphemeralKey()
-        return self._message(OP_INITIAL_CONNECT,
-                             [(FIELD_A1, u32le(timestamp))])
+        return self._message(Opcode.INITIAL_CONNECT,
+                             [(FieldId.A1, u32le(timestamp))])
 
     def handle(self, opcode: int, payload: Payload,
                timestamp: int) -> list[OutgoingMessage]:
@@ -182,34 +179,34 @@ class HandshakeEngine:
 
     def _advance(self, payload: Payload,
                  timestamp: int) -> list[OutgoingMessage]:
-        stamp = (FIELD_A1, u32le(timestamp))
+        stamp = (FieldId.A1, u32le(timestamp))
         match self._stage:
             case HandshakeStage.INITIAL_CONNECT:
                 self._stage = HandshakeStage.CAPABILITY
-                return [self._message(OP_CAPABILITY, [
-                    stamp, (FIELD_A3, b'\x20'), (FIELD_A4, b'\x00\xf0')])]
+                return [self._message(Opcode.CAPABILITY, [
+                    stamp, (FieldId.A3, b'\x20'), (FieldId.A4, b'\x00\xf0')])]
             case HandshakeStage.CAPABILITY:
                 self._read_capability(payload)
                 self._stage = HandshakeStage.BASE_INFO
-                return [self._message(OP_BASE_INFO, [stamp])]
+                return [self._message(Opcode.BASE_INFO, [stamp])]
             case HandshakeStage.BASE_INFO:
                 self._device_info = decode_device_info(payload)
                 self._stage = HandshakeStage.SET_CAPABILITY
-                return [self._message(OP_SET_CAPABILITY, [
-                    stamp, (FIELD_A3, b'\x20'),
-                    (FIELD_A4, self._mtu.to_bytes(2, 'little')),
-                    (FIELD_A5, bytes((self._auth_method,))),
-                    (FIELD_A6, bytes((self._encryption_method,)))])]
+                return [self._message(Opcode.SET_CAPABILITY, [
+                    stamp, (FieldId.A3, b'\x20'),
+                    (FieldId.A4, self._mtu.to_bytes(2, 'little')),
+                    (FieldId.A5, bytes((self._auth_method,))),
+                    (FieldId.A6, bytes((self._encryption_method,)))])]
             case HandshakeStage.SET_CAPABILITY:
                 self._stage = HandshakeStage.PUBLIC_KEY
-                return [self._message(OP_PUBLIC_KEY, [
-                    (FIELD_A1, self._ephemeral_key().public_point)])]
+                return [self._message(Opcode.PUBLIC_KEY, [
+                    (FieldId.A1, self._ephemeral_key().public_point)])]
             case HandshakeStage.PUBLIC_KEY:
                 self._derive_session_keys(payload)
                 self._stage = HandshakeStage.AES_METADATA
-                return [self._message(OP_AES_METADATA, [
-                    stamp, (FIELD_A3, AES_METADATA_CAPABILITY),
-                    (FIELD_A5, self._time_zone.encode())])]
+                return [self._message(Opcode.AES_METADATA, [
+                    stamp, (FieldId.A3, AES_METADATA_CAPABILITY),
+                    (FieldId.A5, self._time_zone.encode())])]
             case HandshakeStage.AES_METADATA:
                 self._stage = HandshakeStage.USER_AUTH
                 return [self._user_auth(timestamp)]
@@ -218,18 +215,18 @@ class HandshakeEngine:
                 return []
 
     def _read_capability(self, payload: Payload) -> None:
-        mtu = payload.get(FIELD_A2)
+        mtu = payload.get(FieldId.A2)
         if mtu is not None and len(mtu) >= 2:
             self._mtu = int.from_bytes(mtu[:2], 'little')
-        auth = payload.get(FIELD_A3)
+        auth = payload.get(FieldId.A3)
         if auth:
             self._auth_method = auth[0]
-        encryption = payload.get(FIELD_A5)
+        encryption = payload.get(FieldId.A5)
         if encryption:
             self._encryption_method = encryption[0]
 
     def _derive_session_keys(self, payload: Payload) -> None:
-        point = payload.get(FIELD_A1)
+        point = payload.get(FieldId.A1)
         if point is None:
             raise HandshakeError(self._stage, 'no device key')
         try:
@@ -247,8 +244,9 @@ class HandshakeEngine:
 
     def _user_auth(self, timestamp: int) -> OutgoingMessage:
         identity = self._owner_id or self._client_id
-        return self._message(OP_USER_AUTH, [(FIELD_A1, u32le(timestamp)),
-                                            (FIELD_A2, identity.encode())])
+        return self._message(Opcode.USER_AUTH,
+                             [(FieldId.A1, u32le(timestamp)),
+                              (FieldId.A2, identity.encode())])
 
     def _message(self, opcode: int,
                  fields: list[tuple[int, bytes]]) -> OutgoingMessage:
@@ -261,17 +259,17 @@ class HandshakeEngine:
 def decode_device_info(payload: Payload) -> DeviceInfo:
     """Base info: A2 product name, A3 firmware, A4 serial, A5 MAC + suffix."""
 
-    serial = _ascii(payload.get(FIELD_A4))
+    serial = _ascii(payload.get(FieldId.A4))
     mac = None
-    raw = payload.get(FIELD_A5)
+    raw = payload.get(FieldId.A5)
     if raw is not None and len(raw) >= MAC_LENGTH:
         prefix = raw[:MAC_LENGTH]
         if _ascii(prefix) is None:
             mac = ':'.join(f'{byte:02X}' for byte in prefix)
     return DeviceInfo(
         serial=serial if serial and len(serial) >= MIN_SERIAL_LENGTH else None,
-        name=_ascii(payload.get(FIELD_A2)),
-        firmware_version=_ascii(payload.get(FIELD_A3)), mac_address=mac)
+        name=_ascii(payload.get(FieldId.A2)),
+        firmware_version=_ascii(payload.get(FieldId.A3)), mac_address=mac)
 
 
 def _ascii(raw: bytes | None) -> str | None:

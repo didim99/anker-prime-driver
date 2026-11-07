@@ -5,9 +5,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from ankerprime.protocol.a2687.codes import (
-    OP_AES_METADATA, OP_BASE_INFO, OP_CAPABILITY, OP_INITIAL_CONNECT,
-    OP_PUBLIC_KEY, OP_REALTIME_REPORT, OP_SET_CAPABILITY, OP_USER_AUTH)
+from ankerprime.protocol.a2687.codes import Opcode
 from ankerprime.protocol.a2687.commands import Encryption
 from ankerprime.protocol.a2687.crypto import EphemeralKey, SessionKeys
 from ankerprime.protocol.a2687.handshake import (
@@ -32,11 +30,11 @@ def engine(owner_id: str | None = None) -> HandshakeEngine:
 def until_public_key(handshake: HandshakeEngine) -> None:
     handshake.start(CAPTURE_EPOCH)
     for opcode, plaintext in (
-            (OP_INITIAL_CONNECT, PLAIN_DEVICE_INITIAL_CONNECT),
-            (OP_CAPABILITY, PLAIN_DEVICE_CAPABILITY),
-            (OP_BASE_INFO, PLAIN_DEVICE_BASE_INFO),
-            (OP_SET_CAPABILITY, PLAIN_DEVICE_SET_CAPABILITY),
-            (OP_PUBLIC_KEY, PLAIN_DEVICE_PUBLIC_KEY)):
+            (Opcode.INITIAL_CONNECT, PLAIN_DEVICE_INITIAL_CONNECT),
+            (Opcode.CAPABILITY, PLAIN_DEVICE_CAPABILITY),
+            (Opcode.BASE_INFO, PLAIN_DEVICE_BASE_INFO),
+            (Opcode.SET_CAPABILITY, PLAIN_DEVICE_SET_CAPABILITY),
+            (Opcode.PUBLIC_KEY, PLAIN_DEVICE_PUBLIC_KEY)):
         handshake.handle(opcode, Payload.parse(plaintext), CAPTURE_EPOCH)
 
 
@@ -47,30 +45,30 @@ def test_ladder_reproduces_the_captured_requests() -> None:
     assert first.encryption == Encryption.NEGOTIATION
     assert handshake.stage == HandshakeStage.INITIAL_CONNECT
     [capability] = handshake.handle(
-        OP_INITIAL_CONNECT, Payload.parse(PLAIN_DEVICE_INITIAL_CONNECT),
+        Opcode.INITIAL_CONNECT, Payload.parse(PLAIN_DEVICE_INITIAL_CONNECT),
         CAPTURE_EPOCH)
     assert capability.plaintext == PLAIN_CLIENT_CAPABILITY
     [base_info] = handshake.handle(
-        OP_CAPABILITY, Payload.parse(PLAIN_DEVICE_CAPABILITY), CAPTURE_EPOCH)
-    assert base_info.opcode == OP_BASE_INFO
+        Opcode.CAPABILITY, Payload.parse(PLAIN_DEVICE_CAPABILITY), CAPTURE_EPOCH)
+    assert base_info.opcode == Opcode.BASE_INFO
     assert handshake.mtu == 0x0129
 
 
 def test_base_info_and_set_capability() -> None:
     handshake = engine()
     handshake.start(CAPTURE_EPOCH)
-    handshake.handle(OP_INITIAL_CONNECT,
+    handshake.handle(Opcode.INITIAL_CONNECT,
                      Payload.parse(PLAIN_DEVICE_INITIAL_CONNECT), 1)
-    handshake.handle(OP_CAPABILITY, Payload.parse(PLAIN_DEVICE_CAPABILITY), 1)
+    handshake.handle(Opcode.CAPABILITY, Payload.parse(PLAIN_DEVICE_CAPABILITY), 1)
     [message] = handshake.handle(
-        OP_BASE_INFO, Payload.parse(PLAIN_DEVICE_BASE_INFO), 1)
+        Opcode.BASE_INFO, Payload.parse(PLAIN_DEVICE_BASE_INFO), 1)
     info = handshake.device_info
     assert info.name == 'Charging'
     assert info.firmware_version == 'v0.0.5.0'
     assert info.serial == 'ASHDK7U1F51501771'
     assert info.mac_address == '7C:E9:13:81:46:02'
     fields = Payload.parse(message.plaintext)
-    assert message.opcode == OP_SET_CAPABILITY
+    assert message.opcode == Opcode.SET_CAPABILITY
     assert (fields.get(0xA4), fields.get(0xA5), fields.get(0xA6)) == (
         b'\x29\x01', b'\x44', b'\x02')
 
@@ -79,11 +77,11 @@ def test_public_key_exchange_moves_to_the_session_key() -> None:
     handshake = engine()
     handshake.start(CAPTURE_EPOCH)
     for opcode, plaintext in (
-            (OP_INITIAL_CONNECT, PLAIN_DEVICE_INITIAL_CONNECT),
-            (OP_CAPABILITY, PLAIN_DEVICE_CAPABILITY),
-            (OP_BASE_INFO, PLAIN_DEVICE_BASE_INFO)):
+            (Opcode.INITIAL_CONNECT, PLAIN_DEVICE_INITIAL_CONNECT),
+            (Opcode.CAPABILITY, PLAIN_DEVICE_CAPABILITY),
+            (Opcode.BASE_INFO, PLAIN_DEVICE_BASE_INFO)):
         handshake.handle(opcode, Payload.parse(plaintext), 1)
-    [key] = handshake.handle(OP_SET_CAPABILITY,
+    [key] = handshake.handle(Opcode.SET_CAPABILITY,
                              Payload.parse(PLAIN_DEVICE_SET_CAPABILITY), 1)
     assert key.encryption == Encryption.NEGOTIATION
     point = Payload.parse(key.plaintext).get(0xA1)
@@ -91,7 +89,7 @@ def test_public_key_exchange_moves_to_the_session_key() -> None:
     assert handshake.session_keys is None
     charger = EphemeralKey()
     reply = Payload.parse(b'\x00\xa1\x40' + charger.public_point)
-    [metadata] = handshake.handle(OP_PUBLIC_KEY, reply, 1)
+    [metadata] = handshake.handle(Opcode.PUBLIC_KEY, reply, 1)
     assert handshake.stage == HandshakeStage.AES_METADATA
     assert metadata.encryption == Encryption.SESSION
     fields = Payload.parse(metadata.plaintext)
@@ -108,11 +106,11 @@ def test_user_auth_uses_the_owner_id_when_given() -> None:
     for owner, identity in ((None, CLIENT_ID), ('owner-1', 'owner-1')):
         handshake = engine(owner)
         until_public_key(handshake)
-        [auth] = handshake.handle(OP_AES_METADATA, OK, 1)
-        assert auth.opcode == OP_USER_AUTH
+        [auth] = handshake.handle(Opcode.AES_METADATA, OK, 1)
+        assert auth.opcode == Opcode.USER_AUTH
         assert auth.encryption == Encryption.SESSION
         assert Payload.parse(auth.plaintext).get(0xA2) == identity.encode()
-        assert handshake.handle(OP_USER_AUTH, OK, 1) == []
+        assert handshake.handle(Opcode.USER_AUTH, OK, 1) == []
         assert handshake.stage == HandshakeStage.SESSION_READY
         assert not handshake.auth_rejected
 
@@ -120,8 +118,8 @@ def test_user_auth_uses_the_owner_id_when_given() -> None:
 def test_unrelated_frames_are_ignored() -> None:
     handshake = engine()
     handshake.start(1)
-    assert handshake.handle(OP_REALTIME_REPORT, OK, 1) == []
-    assert handshake.handle(OP_USER_AUTH, OK, 1) == []
+    assert handshake.handle(Opcode.REALTIME_REPORT, OK, 1) == []
+    assert handshake.handle(Opcode.USER_AUTH, OK, 1) == []
     assert handshake.stage == HandshakeStage.INITIAL_CONNECT
 
 
@@ -129,7 +127,7 @@ def test_refusal_stops_the_ladder() -> None:
     handshake = engine()
     handshake.start(1)
     with pytest.raises(HandshakeError) as caught:
-        handshake.handle(OP_INITIAL_CONNECT, Payload(3, ()), 1)
+        handshake.handle(Opcode.INITIAL_CONNECT, Payload(3, ()), 1)
     assert caught.value.stage == HandshakeStage.INITIAL_CONNECT
     assert caught.value.status == 3
     assert not handshake.can_skip
@@ -142,9 +140,9 @@ def test_only_metadata_and_user_auth_may_be_skipped() -> None:
         handshake.skip(1)
     until_public_key(handshake)
     assert handshake.can_skip
-    assert [message.opcode for message in handshake.skip(1)] == [OP_USER_AUTH]
+    assert [message.opcode for message in handshake.skip(1)] == [Opcode.USER_AUTH]
     with pytest.raises(HandshakeError):
-        handshake.handle(OP_USER_AUTH, Payload(1, ()), 1)
+        handshake.handle(Opcode.USER_AUTH, Payload(1, ()), 1)
     assert handshake.auth_rejected
     assert handshake.skip(1) == []
     assert handshake.stage == HandshakeStage.SESSION_READY
@@ -155,18 +153,18 @@ def test_missing_or_bad_device_key_fails() -> None:
         handshake = engine()
         handshake.start(1)
         for opcode, plaintext in (
-                (OP_INITIAL_CONNECT, PLAIN_DEVICE_INITIAL_CONNECT),
-                (OP_CAPABILITY, PLAIN_DEVICE_CAPABILITY),
-                (OP_BASE_INFO, PLAIN_DEVICE_BASE_INFO),
-                (OP_SET_CAPABILITY, PLAIN_DEVICE_SET_CAPABILITY)):
+                (Opcode.INITIAL_CONNECT, PLAIN_DEVICE_INITIAL_CONNECT),
+                (Opcode.CAPABILITY, PLAIN_DEVICE_CAPABILITY),
+                (Opcode.BASE_INFO, PLAIN_DEVICE_BASE_INFO),
+                (Opcode.SET_CAPABILITY, PLAIN_DEVICE_SET_CAPABILITY)):
             handshake.handle(opcode, Payload.parse(plaintext), 1)
         with pytest.raises(HandshakeError):
-            handshake.handle(OP_PUBLIC_KEY, reply, 1)
+            handshake.handle(Opcode.PUBLIC_KEY, reply, 1)
 
 
 def test_handling_before_start_is_refused() -> None:
     with pytest.raises(HandshakeError):
-        engine().handle(OP_INITIAL_CONNECT, OK, 1)
+        engine().handle(Opcode.INITIAL_CONNECT, OK, 1)
 
 
 def test_client_id_is_random_hex() -> None:

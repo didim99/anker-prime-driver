@@ -7,17 +7,24 @@ field list with a status byte (00 = OK); requests have none.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Self
 
 from ankerprime.model.errors import ProtocolError
 
 
-TYPE_TEXT = 0x00
-TYPE_U8 = 0x01
-TYPE_U16 = 0x02
-TYPE_U32 = 0x03
-TYPE_BYTES = 0x04
-SCALAR_LENGTHS = {TYPE_U8: 1, TYPE_U16: 2, TYPE_U32: 4}
+class ValueType(IntEnum):
+    """Leading type byte of a typed value."""
+
+    TEXT = 0x00
+    U8 = 0x01
+    U16 = 0x02
+    U32 = 0x03
+    BYTES = 0x04
+
+
+SCALAR_LENGTHS: dict[int, int] = {ValueType.U8: 1, ValueType.U16: 2,
+                                  ValueType.U32: 4}
 
 STATUS_OK = 0x00
 
@@ -74,13 +81,13 @@ class TypedValue:
     def block(self) -> bytes | None:
         """The bytes of a byte-block value."""
 
-        return self._body if self._type_code == TYPE_BYTES else None
+        return self._body if self._type_code == ValueType.BYTES else None
 
     @property
     def text(self) -> str | None:
         """Text without NUL and trailing dot padding."""
 
-        if self._type_code != TYPE_TEXT:
+        if self._type_code != ValueType.TEXT:
             return None
         return self._body.decode('utf-8', 'replace').replace(
             '\x00', '').rstrip('.')
@@ -175,23 +182,23 @@ def encode_fields(fields: Iterable[tuple[int, bytes]]) -> bytes:
 
 
 def typed_u8(value: int) -> bytes:
-    return bytes((TYPE_U8, value & 0xFF))
+    return bytes((ValueType.U8, value & 0xFF))
 
 
 def typed_u16(value: int) -> bytes:
-    return bytes((TYPE_U16,)) + (value & 0xFFFF).to_bytes(2, 'little')
+    return bytes((ValueType.U16,)) + (value & 0xFFFF).to_bytes(2, 'little')
 
 
 def typed_u32(value: int) -> bytes:
-    return bytes((TYPE_U32,)) + (value & 0xFFFFFFFF).to_bytes(4, 'little')
+    return bytes((ValueType.U32,)) + (value & 0xFFFFFFFF).to_bytes(4, 'little')
 
 
 def typed_bytes(value: bytes) -> bytes:
-    return bytes((TYPE_BYTES,)) + value
+    return bytes((ValueType.BYTES,)) + value
 
 
 def typed_text(value: str) -> bytes:
-    return bytes((TYPE_TEXT,)) + value.encode('utf-8')
+    return bytes((ValueType.TEXT,)) + value.encode('utf-8')
 
 
 def _try_decode(data: bytes, offset: int) -> list[Tlv] | None:

@@ -8,9 +8,7 @@ from ankerprime.interfaces.channel import ChannelListener
 from ankerprime.model.errors import (
     ChargerConnectionError, ChargerTimeoutError, ProtocolError)
 from ankerprime.protocol.a2687 import commands
-from ankerprime.protocol.a2687.codes import (
-    OP_AES_METADATA, OP_BASE_INFO, OP_CAPABILITY, OP_INITIAL_CONNECT,
-    OP_PUBLIC_KEY, OP_READ_ALL, OP_SET_CAPABILITY, OP_USER_AUTH)
+from ankerprime.protocol.a2687.codes import Opcode
 from ankerprime.protocol.a2687.crypto import NEGOTIATION_KEYS
 from ankerprime.protocol.a2687.frame import Frame, decode_frame, encode_frame
 from ankerprime.protocol.a2687.handshake import HandshakeStage
@@ -19,8 +17,9 @@ from ankerprime.session.a2687 import A2687Session
 from tests.device.a2687_charger import SimulatedCharger, SimulatedLink
 
 
-LADDER = [OP_INITIAL_CONNECT, OP_CAPABILITY, OP_BASE_INFO, OP_SET_CAPABILITY,
-          OP_PUBLIC_KEY, OP_AES_METADATA, OP_USER_AUTH]
+LADDER = [Opcode.INITIAL_CONNECT, Opcode.CAPABILITY, Opcode.BASE_INFO,
+          Opcode.SET_CAPABILITY, Opcode.PUBLIC_KEY, Opcode.AES_METADATA,
+          Opcode.USER_AUTH]
 
 
 class Recorder(ChannelListener):
@@ -63,7 +62,7 @@ async def test_negotiates_and_carries_plaintext_frames() -> None:
     assert session.stage == HandshakeStage.SESSION_READY
     assert charger.opcodes() == LADDER
     assert charger.identity == 'client-1'
-    metadata = dict(charger.requests)[OP_AES_METADATA]
+    metadata = dict(charger.requests)[Opcode.AES_METADATA]
     assert metadata.get(0xA5) == b'CET-1'
     info = session.device_info
     assert info.serial == 'ASHDMOCK00000000'
@@ -72,7 +71,7 @@ async def test_negotiates_and_carries_plaintext_frames() -> None:
     await session.send(plain(commands.read_all(1)))
     await settle()
     [reply] = recorder.frames
-    assert reply.opcode == OP_READ_ALL and reply.response
+    assert reply.opcode == Opcode.READ_ALL and reply.response
     assert not reply.encrypted
     assert Payload.parse(reply.payload).ok
     # Sent frames are sealed with the session key, not the static one.
@@ -89,11 +88,11 @@ async def test_owner_id_is_the_user_identity() -> None:
 
 
 async def test_silent_metadata_and_auth_are_skipped() -> None:
-    charger = SimulatedCharger(silent={OP_AES_METADATA, OP_USER_AUTH})
+    charger = SimulatedCharger(silent={Opcode.AES_METADATA, Opcode.USER_AUTH})
     session, _, _ = make_session(charger)
     await session.open()
     assert session.is_open
-    assert charger.opcodes()[-2:] == [OP_AES_METADATA, OP_USER_AUTH]
+    assert charger.opcodes()[-2:] == [Opcode.AES_METADATA, Opcode.USER_AUTH]
 
 
 async def test_refused_identity_continues_read_only() -> None:
@@ -105,7 +104,7 @@ async def test_refused_identity_continues_read_only() -> None:
 
 
 async def test_silent_stage_times_out_and_closes() -> None:
-    charger = SimulatedCharger(silent={OP_CAPABILITY})
+    charger = SimulatedCharger(silent={Opcode.CAPABILITY})
     session, link, _ = make_session(charger)
     with pytest.raises(ChargerTimeoutError):
         await session.open()
@@ -114,7 +113,7 @@ async def test_silent_stage_times_out_and_closes() -> None:
 
 
 async def test_link_loss_during_negotiation_fails_open() -> None:
-    charger = SimulatedCharger(silent={OP_BASE_INFO})
+    charger = SimulatedCharger(silent={Opcode.BASE_INFO})
     session, link, _ = make_session(charger)
     opening = asyncio.create_task(session.open())
     await asyncio.sleep(0.02)
@@ -145,7 +144,7 @@ async def test_reopen_negotiates_again() -> None:
     await session.close()
     await session.open()
     assert link.opens == 2
-    assert charger.opcodes().count(OP_INITIAL_CONNECT) == 2
+    assert charger.opcodes().count(Opcode.INITIAL_CONNECT) == 2
 
 
 async def test_unauthentic_frames_end_the_session() -> None:

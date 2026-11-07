@@ -21,8 +21,8 @@ from ankerprime.protocol.a2345.frame import Message
 from ankerprime.protocol.a2345.messages import (
     RawPortReading, RealtimeTelemetry, StatusSnapshot, VersionInfo)
 from ankerprime.protocol.a2345.settings import (
-    PRIORITY_OFF, PRIORITY_PREFERRED, THEME_PICTURE_CODES,
-    Capabilities, ClockState, ClockWindow, OutputControl, PortSchedule)
+    THEME_PICTURE_CODES, Capabilities, ClockState,
+    ClockWindow, OutputControl, PortSchedule, PriorityCode)
 from ankerprime.protocol.a2345.updates import (
     CountdownUpdate, OutputSwitchUpdate, SettingsChange)
 from ankerprime.protocol.codes import decode_value, lookup
@@ -191,8 +191,8 @@ class StateTracker:
             countdown = Countdown(control.countdown_total,
                                   control.countdown_remaining, reported_at)
         preferred = None
-        if control.priority != PRIORITY_OFF:
-            preferred = control.priority == PRIORITY_PREFERRED
+        if control.priority != PriorityCode.OFF:
+            preferred = control.priority == PriorityCode.PREFERRED
         return OutputState(output, is_on=control.is_on, countdown=countdown,
                            power_on_schedule=_schedule(control.power_on),
                            power_off_schedule=_schedule(control.power_off),

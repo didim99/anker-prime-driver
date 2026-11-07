@@ -4,6 +4,8 @@ Values follow Charker, cross-checked there against SolixBLE (bb2d398) and
 Anker_Prime_160W_WebBLE (ad4355d).
 """
 
+from enum import IntEnum
+
 from ankerprime.model.enums import (
     CableRating, ChargingMode, ChargingProtocol, DisplayLanguage,
     FixedAllocation, OutputId, PortId, ScreenOrientation, ScreenTimeout)
@@ -23,63 +25,71 @@ SESSION_GROUP = 0x0F
 ENCRYPTED_FLAG = 0x4000
 RESPONSE_FLAG = 0x0800
 
-# Negotiation opcodes (group 0x01).
-OP_INITIAL_CONNECT = 0x0001
-OP_CAPABILITY = 0x0003
-OP_SET_CAPABILITY = 0x0005
-OP_PUBLIC_KEY = 0x0021
-OP_AES_METADATA = 0x0022
-OP_USER_AUTH = 0x0027
-OP_BASE_INFO = 0x0029
 
-# Session opcodes (group 0x0F).
-OP_READ_ALL = 0x0200
-OP_LANGUAGE = 0x0202
-OP_SCREEN_TIMEOUT = 0x0203
-OP_BRIGHTNESS = 0x0204
-OP_FIXED_ALLOCATION = 0x0205
-OP_CHARGING_MODE = 0x0206
-OP_PORT_OUTPUT = 0x0207
-OP_PORT_TIMER = 0x0209
-OP_BIND_SUCCESS = 0x020A
-# Shared by the realtime trigger (byte block) and the orientation write (u8).
-OP_REALTIME_TRIGGER = 0x020B
-OP_ORIENTATION = 0x020B
-OP_GYROSCOPE = 0x020D
-OP_SET_SCREENSAVER = 0x021F
-OP_COVER_TRANSFER_START = 0x0220
-OP_COVER_TRANSFER_CHUNK = 0x0221
-OP_REALTIME_REPORT = 0x0300
+class Opcode(IntEnum):
+    """Command opcodes; ``ORIENTATION`` is an alias of ``REALTIME_TRIGGER``."""
 
-# Field ids.
-FIELD_A1 = 0xA1
-FIELD_A2 = 0xA2
-FIELD_A3 = 0xA3
-FIELD_A4 = 0xA4
-FIELD_A5 = 0xA5
-FIELD_A6 = 0xA6
-FIELD_A7 = 0xA7
-FIELD_A8 = 0xA8
-FIELD_SCREEN_TIMEOUT = 0xA8
-FIELD_BRIGHTNESS = 0xA9
-FIELD_CHARGING_MODE = 0xAA
-FIELD_CONTROL_C1 = 0xAC
-FIELD_CONTROL_C2 = 0xAD
-FIELD_CONTROL_C3 = 0xAE
-FIELD_ORIENTATION = 0xAF
-FIELD_GYROSCOPE = 0xB2
-FIELD_CONNECTED_DEVICES = 0xB4
-# Found by Charker in live frames: the screen picture shown (bytes 2-3).
-FIELD_COVER_STATE = 0xE1
-FIELD_URL = 0xFD
-FIELD_TIMESTAMP = 0xFE
+    # Negotiation (group 0x01).
+    INITIAL_CONNECT = 0x0001
+    CAPABILITY = 0x0003
+    SET_CAPABILITY = 0x0005
+    PUBLIC_KEY = 0x0021
+    AES_METADATA = 0x0022
+    USER_AUTH = 0x0027
+    BASE_INFO = 0x0029
+
+    # Session (group 0x0F).
+    READ_ALL = 0x0200
+    LANGUAGE = 0x0202
+    SCREEN_TIMEOUT = 0x0203
+    BRIGHTNESS = 0x0204
+    FIXED_ALLOCATION = 0x0205
+    CHARGING_MODE = 0x0206
+    PORT_OUTPUT = 0x0207
+    PORT_TIMER = 0x0209
+    BIND_SUCCESS = 0x020A
+    # Shared by the realtime trigger (byte block) and the orientation write (u8).
+    REALTIME_TRIGGER = 0x020B
+    ORIENTATION = 0x020B
+    GYROSCOPE = 0x020D
+    SET_SCREENSAVER = 0x021F
+    COVER_TRANSFER_START = 0x0220
+    COVER_TRANSFER_CHUNK = 0x0221
+    REALTIME_REPORT = 0x0300
+
+
+class FieldId(IntEnum):
+    """Field ids; ``SCREEN_TIMEOUT`` is an alias of ``A8``."""
+
+    A1 = 0xA1
+    A2 = 0xA2
+    A3 = 0xA3
+    A4 = 0xA4
+    A5 = 0xA5
+    A6 = 0xA6
+    A7 = 0xA7
+    A8 = 0xA8
+    SCREEN_TIMEOUT = 0xA8
+    BRIGHTNESS = 0xA9
+    CHARGING_MODE = 0xAA
+    CONTROL_C1 = 0xAC
+    CONTROL_C2 = 0xAD
+    CONTROL_C3 = 0xAE
+    ORIENTATION = 0xAF
+    GYROSCOPE = 0xB2
+    CONNECTED_DEVICES = 0xB4
+    # Found by Charker in live frames: the screen picture shown (bytes 2-3).
+    COVER_STATE = 0xE1
+    URL = 0xFD
+    TIMESTAMP = 0xFE
+
 
 # Every session command carries A1 = 0x21.
 SESSION_ACTION = 0x21
 
 # Port telemetry and control fields, C1..C3 in order.
-PORT_FIELDS = (FIELD_A5, FIELD_A6, FIELD_A7)
-CONTROL_FIELDS = (FIELD_CONTROL_C1, FIELD_CONTROL_C2, FIELD_CONTROL_C3)
+PORT_FIELDS = (FieldId.A5, FieldId.A6, FieldId.A7)
+CONTROL_FIELDS = (FieldId.CONTROL_C1, FieldId.CONTROL_C2, FieldId.CONTROL_C3)
 
 # Port order on the wire: the index is the port code of commands.
 PORTS = (PortId.C1, PortId.C2, PortId.C3)

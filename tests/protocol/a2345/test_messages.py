@@ -4,9 +4,10 @@ import pytest
 
 from ankerprime.model import PortId
 from ankerprime.protocol.a2345.fields import MessageError, MessageErrorKind
-from ankerprime.protocol.a2345.frame import Frame, Tlv, decode_frame
+from ankerprime.protocol.a2345.frame import (
+    Frame, MessageType, Tlv, decode_frame)
 from ankerprime.protocol.a2345.messages import (
-    MSG_STATUS_SNAPSHOT, PORTS, RawPortReading, decode_acknowledgement,
+    PORTS, RawPortReading, decode_acknowledgement,
     decode_realtime, decode_status_snapshot, decode_version_info)
 from tests.protocol.a2345.fixtures import (
     REALTIME_ACKNOWLEDGEMENT, REALTIME_CHINA_FIRMWARE,
@@ -49,7 +50,7 @@ def snapshot_frame(tail: bytes = b'', extra: list[Tlv] | None = None) -> Frame:
                    + (base + 2).to_bytes(2, 'little') + tail)
         fields.append(Tlv(0xA4 + offset, payload))
     return Frame(version=3, speaker=1, group=15,
-                 message_type=MSG_STATUS_SNAPSHOT, increment=None,
+                 message_type=MessageType.STATUS_SNAPSHOT, increment=None,
                  fields=fields + (extra or []), length=0)
 
 

@@ -13,15 +13,10 @@ from ankerprime.model.enums import OutputId, ScheduleSlot
 from ankerprime.protocol.a2345.codes import (
     SCHEDULE_SLOT_CODES, USB_C_GROUPS, output_of_group)
 from ankerprime.protocol.a2345.fields import FieldReader
-from ankerprime.protocol.a2345.frame import Frame, Message
+from ankerprime.protocol.a2345.frame import Frame, Message, MessageType
 from ankerprime.protocol.a2345.settings import (
-    ACK_COUNTDOWN, ACK_OUTPUT_SWITCH, ACK_PREFIX, ACK_SCHEDULE,
-    MSG_BRIGHTNESS_CHANGE, MSG_CHARGING_MODE_CHANGE, MSG_CLOCK_CHANGE,
-    MSG_COUNTDOWN_CHANGE, MSG_ERROR_CODE_CHANGE, MSG_FIRMWARE_VERSION_CHANGE,
-    MSG_KNOB_DIRECTION_CHANGE, MSG_OUTPUT_CHANGE, MSG_PRIORITY_CHANGE,
-    MSG_SCHEDULE_CHANGE, MSG_SCREEN_TIMEOUT_CHANGE, MSG_STATUS_SNAPSHOT,
-    MSG_THEME_DOWNLOAD_CHANGE, MSG_THEME_STATUS, ClockState, CustomProfile,
-    PortSchedule, SettingField, decode_custom_profile, decode_version)
+    ACK_PREFIX, ClockState, CustomProfile, PortSchedule,
+    SettingField, decode_custom_profile, decode_version)
 from ankerprime.protocol.codes import decode_value
 
 
@@ -314,14 +309,16 @@ def decode_write_acknowledgement(frame: Frame) -> WriteAcknowledgement | None:
 
     message_type = frame.message_type
     if (message_type & 0xFF00 != ACK_PREFIX
-            or message_type in (MSG_STATUS_SNAPSHOT, MSG_THEME_STATUS)):
+            or message_type in (MessageType.STATUS_SNAPSHOT,
+                                MessageType.THEME_STATUS)):
         return None
     reader = FieldReader(frame)
     output = None
     slot = None
-    if message_type in (ACK_OUTPUT_SWITCH, ACK_SCHEDULE, ACK_COUNTDOWN):
+    if message_type in (MessageType.OUTPUT_SWITCH_ACK, MessageType.SCHEDULE_ACK,
+                        MessageType.COUNTDOWN_ACK):
         output = output_of_group(reader.integer(0xA2))
-    if message_type == ACK_SCHEDULE:
+    if message_type == MessageType.SCHEDULE_ACK:
         slot = decode_value(SCHEDULE_SLOT_CODES, reader.byte(0xA3))
     return WriteAcknowledgement(message_type, frame.increment, output=output,
                                 slot=slot)
@@ -432,18 +429,19 @@ def _theme_download_change(reader: FieldReader) -> SettingsUpdate | None:
                                reader.byte(0xA4))
 
 
-_CHANGE_DECODERS = {
-    MSG_FIRMWARE_VERSION_CHANGE: _firmware_change,
-    MSG_OUTPUT_CHANGE: _output_change,
-    MSG_ERROR_CODE_CHANGE: _error_code_change,
-    MSG_COUNTDOWN_CHANGE: _countdown_change,
-    MSG_SCHEDULE_CHANGE: _schedule_change,
-    MSG_SCREEN_TIMEOUT_CHANGE: _screen_timeout_change,
-    MSG_BRIGHTNESS_CHANGE: _single_value_change(SettingField.BRIGHTNESS),
-    MSG_CLOCK_CHANGE: _clock_change,
-    MSG_CHARGING_MODE_CHANGE: _charging_mode_change,
-    MSG_PRIORITY_CHANGE: _priority_change,
-    MSG_KNOB_DIRECTION_CHANGE: _single_value_change(SettingField.KNOB_DIRECTION),
-    MSG_THEME_DOWNLOAD_CHANGE: _theme_download_change,
-    MSG_THEME_STATUS: _theme_status,
+_CHANGE_DECODERS: dict[int, Callable[[FieldReader], SettingsUpdate | None]] = {
+    MessageType.FIRMWARE_VERSION_CHANGE: _firmware_change,
+    MessageType.OUTPUT_CHANGE: _output_change,
+    MessageType.ERROR_CODE_CHANGE: _error_code_change,
+    MessageType.COUNTDOWN_CHANGE: _countdown_change,
+    MessageType.SCHEDULE_CHANGE: _schedule_change,
+    MessageType.SCREEN_TIMEOUT_CHANGE: _screen_timeout_change,
+    MessageType.BRIGHTNESS_CHANGE: _single_value_change(SettingField.BRIGHTNESS),
+    MessageType.CLOCK_CHANGE: _clock_change,
+    MessageType.CHARGING_MODE_CHANGE: _charging_mode_change,
+    MessageType.PRIORITY_CHANGE: _priority_change,
+    MessageType.KNOB_DIRECTION_CHANGE:
+        _single_value_change(SettingField.KNOB_DIRECTION),
+    MessageType.THEME_DOWNLOAD_CHANGE: _theme_download_change,
+    MessageType.THEME_STATUS: _theme_status,
 }

@@ -11,15 +11,9 @@ from ankerprime.protocol.a2345.fields import FieldReader
 from ankerprime.protocol.a2345.frame import Frame
 from ankerprime.protocol.a2345.settings import (
     CUSTOM_CHARGING_MODE_CODE, OVER_TEMPERATURE_CODE, PORT_PRIORITY_MODE_CODE,
-    PRIORITY_NORMAL, PRIORITY_OFF, PRIORITY_PREFERRED, TAG_BRAND_IDENTITY,
-    TAG_BRIGHTNESS, TAG_CAPABILITIES, TAG_CHARGING_MODE, TAG_CLOCK,
-    TAG_CLOCK_SCHEDULE, TAG_CUSTOM_PROFILE, TAG_DEVICE_IDENTIFICATION,
-    TAG_ERROR_CODE, TAG_FIRMWARE, TAG_FIRST_OUTPUT_CONTROL, TAG_HOUR_FORMAT,
-    TAG_KNOB_DIRECTION, TAG_MAX_COMPATIBILITY, TAG_PORT_PROTOCOLS,
-    TAG_PROTOCOL_VERSION, TAG_SCREEN_TIMEOUT, TAG_UFCS, TAG_UPDATING_FIRMWARE,
-    TAG_USB_IDENTITY, THEME_PICTURE_CODES, Capabilities, ClockState,
-    ClockWindow, CustomProfile, IdentitySlot, OutputControl, PortProtocol,
-    SettingField, decode_clock_window, decode_custom_profile,
+    THEME_PICTURE_CODES, Capabilities, ClockState, ClockWindow,
+    CustomProfile, IdentitySlot, OutputControl, PortProtocol, PriorityCode,
+    SettingField, SnapshotTag, decode_clock_window, decode_custom_profile,
     decode_identities, decode_output_control, decode_port_protocols,
     decode_snapshot_clock, decode_version, switch_value)
 from ankerprime.protocol.a2345.updates import (
@@ -189,7 +183,7 @@ class DeviceSettings:
         bitmap = 0
         for index, output in enumerate(USB_C_GROUPS):
             control = self._outputs.get(output)
-            if control is not None and control.priority == PRIORITY_PREFERRED:
+            if control is not None and control.priority == PriorityCode.PREFERRED:
                 bitmap |= 1 << index
         return bitmap
 
@@ -244,51 +238,52 @@ class DeviceSettings:
             self._apply_theme_download(update)
 
     def _load_snapshot(self, reader: FieldReader) -> None:
-        self._firmware_version = decode_version(reader.integer(TAG_FIRMWARE))
-        self._error_code = reader.integer(TAG_ERROR_CODE)
+        self._firmware_version = decode_version(reader.integer(SnapshotTag.FIRMWARE))
+        self._error_code = reader.integer(SnapshotTag.ERROR_CODE)
         for index, output in enumerate(GROUPS):
-            tag = TAG_FIRST_OUTPUT_CONTROL + index
+            tag = SnapshotTag.FIRST_OUTPUT_CONTROL + index
             control = decode_output_control(reader.value(tag))
             if control is not None:
                 self._outputs[output] = control
-        self._clock = decode_snapshot_clock(reader.value(TAG_CLOCK))
+        self._clock = decode_snapshot_clock(reader.value(SnapshotTag.CLOCK))
 
-        timeout = reader.byte(TAG_SCREEN_TIMEOUT)
+        timeout = reader.byte(SnapshotTag.SCREEN_TIMEOUT)
         if timeout is not None:
             self._screen_timeout = timeout & 0x0F
-        updating = reader.byte(TAG_UPDATING_FIRMWARE)
+        updating = reader.byte(SnapshotTag.UPDATING_FIRMWARE)
         if updating is not None:
             self._updating_firmware = updating == 1
-        self._charging_mode = reader.byte(TAG_CHARGING_MODE)
-        self._brightness = reader.byte(TAG_BRIGHTNESS)
-        self._knob_direction = reader.byte(TAG_KNOB_DIRECTION)
-        self._hour_format = reader.byte(TAG_HOUR_FORMAT)
-        self._protocol_version = reader.byte(TAG_PROTOCOL_VERSION)
-        bits = reader.integer(TAG_CAPABILITIES) or 0
+        self._charging_mode = reader.byte(SnapshotTag.CHARGING_MODE)
+        self._brightness = reader.byte(SnapshotTag.BRIGHTNESS)
+        self._knob_direction = reader.byte(SnapshotTag.KNOB_DIRECTION)
+        self._hour_format = reader.byte(SnapshotTag.HOUR_FORMAT)
+        self._protocol_version = reader.byte(SnapshotTag.PROTOCOL_VERSION)
+        bits = reader.integer(SnapshotTag.CAPABILITIES) or 0
         self._capabilities = Capabilities(bits & 0xFFFF)
-        self._usb_identities = decode_identities(reader.value(TAG_USB_IDENTITY))
-        brands = reader.value(TAG_BRAND_IDENTITY)
+        usb = reader.value(SnapshotTag.USB_IDENTITY)
+        self._usb_identities = decode_identities(usb)
+        brands = reader.value(SnapshotTag.BRAND_IDENTITY)
         self._brand_identities = decode_identities(brands)
         self._load_gated_fields(reader)
 
     def _load_gated_fields(self, reader: FieldReader) -> None:
         if self.supports(Capabilities.CUSTOM_CHARGING_MODE):
-            profile = reader.value(TAG_CUSTOM_PROFILE)
+            profile = reader.value(SnapshotTag.CUSTOM_PROFILE)
             self._custom_profile = decode_custom_profile(profile)
         if self.supports(Capabilities.CLOCK_SCHEDULE):
-            window = reader.value(TAG_CLOCK_SCHEDULE)
+            window = reader.value(SnapshotTag.CLOCK_SCHEDULE)
             self._clock_schedule = decode_clock_window(window)
         if self.supports(Capabilities.PORT_PROTOCOLS):
-            protocols = reader.value(TAG_PORT_PROTOCOLS)
+            protocols = reader.value(SnapshotTag.PORT_PROTOCOLS)
             self._port_protocols = decode_port_protocols(protocols)
 
-        compatibility = reader.byte(TAG_MAX_COMPATIBILITY)
+        compatibility = reader.byte(SnapshotTag.MAX_COMPATIBILITY)
         if self.supports(Capabilities.MAX_COMPATIBILITY):
             self._max_compatibility = switch_value(compatibility, on_value=0)
         if self.supports(Capabilities.UFCS_SWITCH):
-            self._ufcs = switch_value(reader.byte(TAG_UFCS))
+            self._ufcs = switch_value(reader.byte(SnapshotTag.UFCS))
         if self.supports(Capabilities.DEVICE_IDENTIFICATION):
-            identification = reader.byte(TAG_DEVICE_IDENTIFICATION)
+            identification = reader.byte(SnapshotTag.DEVICE_IDENTIFICATION)
             self._device_identification = switch_value(identification)
 
     def _apply_switch(self, update: OutputSwitchUpdate) -> None:
@@ -344,7 +339,7 @@ class DeviceSettings:
         for output in USB_C_GROUPS:
             control = self._outputs.get(output)
             if control is not None:
-                control.set_priority(PRIORITY_OFF)
+                control.set_priority(PriorityCode.OFF)
 
     def _apply_priority(self, update: PriorityUpdate) -> None:
         if update.bitmap is not None:
@@ -354,8 +349,8 @@ class DeviceSettings:
             return
         control = self._outputs.get(update.output)
         if control is not None:
-            control.set_priority(PRIORITY_PREFERRED if update.preferred
-                                 else PRIORITY_NORMAL)
+            control.set_priority(PriorityCode.PREFERRED if update.preferred
+                                 else PriorityCode.NORMAL)
 
     def _apply_priority_bitmap(self, bitmap: int) -> None:
         for index, output in enumerate(USB_C_GROUPS):
@@ -363,8 +358,8 @@ class DeviceSettings:
             if control is None:
                 continue
             preferred = bitmap & (1 << index)
-            control.set_priority(PRIORITY_PREFERRED if preferred
-                                 else PRIORITY_NORMAL)
+            control.set_priority(PriorityCode.PREFERRED if preferred
+                                 else PriorityCode.NORMAL)
 
     def _apply_theme_download(self, update: ThemeDownloadUpdate) -> None:
         if update.status != 1:

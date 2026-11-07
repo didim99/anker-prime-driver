@@ -92,7 +92,11 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
   pictures as collaborators of the device; one JSON request path for every
   Anker API call and the JSON value helpers in `cloud.values`; the A2345
   settings protocol split into `settings`, `updates`, `device_settings` and
-  `fields` with one field reader; `AccountSettings` in `model.account`
+  `fields` with one field reader; wire codes of both protocols grouped in
+  `IntEnum` classes (A2345 `MessageType`, `ValueType`, `SnapshotTag`,
+  `PriorityCode`, `RealtimeTag`, `VersionTag`; A2687 `Opcode`, `FieldId`,
+  `ValueType`) instead of prefixed module constants; `AccountSettings` in
+  `model.account`
   (still exported from `ankerprime.model`); CLI commands with actions share
   one base.
 

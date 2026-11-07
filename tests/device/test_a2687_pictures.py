@@ -9,9 +9,7 @@ from ankerprime.device.a2687 import A2687Device
 from ankerprime.model import (
     A2687, ChargingMode, ChargingProfile, CustomModeRules, CustomPortLimit,
     InvalidParameterError, OutputId, PictureTransferError, WriteRejectedError)
-from ankerprime.protocol.a2687.codes import (
-    OP_CHARGING_MODE, OP_COVER_TRANSFER_CHUNK, OP_COVER_TRANSFER_START,
-    OP_READ_ALL, OP_SET_SCREENSAVER)
+from ankerprime.protocol.a2687.codes import Opcode
 from ankerprime.session.a2687 import A2687Session
 from tests.device.a2687_charger import SimulatedCharger, SimulatedLink
 from tests.device.test_a2687_device import INFO, connected
@@ -71,7 +69,7 @@ async def test_custom_mode_limits(device: A2687Device,
         await device.apply_custom_profile(gap)
     with pytest.raises(InvalidParameterError, match='number'):
         await device.apply_custom_profile(rules().template(2, ''))
-    assert OP_CHARGING_MODE not in charger.opcodes()
+    assert Opcode.CHARGING_MODE not in charger.opcodes()
 
 
 async def test_screen_picture_is_written_and_shown(
@@ -85,10 +83,10 @@ async def test_screen_picture_is_written_and_shown(
     assert upload.previous == 0x1234 and upload.witnessed
     assert charger.stored_pictures == {upload.picture_id: upload.crc32}
     sent = opcodes(charger, start)
-    assert sent[0] == OP_READ_ALL
-    assert sent[1:3] == [OP_SET_SCREENSAVER, OP_COVER_TRANSFER_START]
-    assert sent.count(OP_COVER_TRANSFER_CHUNK) == 25
-    assert sent[-1] == OP_READ_ALL
+    assert sent[0] == Opcode.READ_ALL
+    assert sent[1:3] == [Opcode.SET_SCREENSAVER, Opcode.COVER_TRANSFER_START]
+    assert sent.count(Opcode.COVER_TRANSFER_CHUNK) == 25
+    assert sent[-1] == Opcode.READ_ALL
     await wait_until(lambda: device.state.settings.display.screen_picture
                      == upload.picture_id & 0xFFFF)
 
@@ -123,7 +121,7 @@ async def test_upload_needs_the_acknowledgement(
     with pytest.raises(InvalidParameterError, match='JPEG'):
         await device.upload_screen_picture(b'GIF89a',
                                            acknowledge_irreversible=True)
-    assert OP_SET_SCREENSAVER not in charger.opcodes()
+    assert Opcode.SET_SCREENSAVER not in charger.opcodes()
 
 
 async def test_refused_start_writes_nothing(
@@ -134,7 +132,7 @@ async def test_refused_start_writes_nothing(
         await device.upload_screen_picture(JPEG,
                                            acknowledge_irreversible=True)
     assert not info.value.pixels_written
-    assert OP_COVER_TRANSFER_CHUNK not in charger.opcodes()
+    assert Opcode.COVER_TRANSFER_CHUNK not in charger.opcodes()
 
 
 async def test_unanswered_checkpoint_stops_the_transfer(
@@ -145,7 +143,7 @@ async def test_unanswered_checkpoint_stops_the_transfer(
         await device.upload_screen_picture(JPEG,
                                            acknowledge_irreversible=True)
     assert info.value.pixels_written
-    assert charger.opcodes().count(OP_COVER_TRANSFER_CHUNK) == 10
+    assert charger.opcodes().count(Opcode.COVER_TRANSFER_CHUNK) == 10
 
 
 async def test_lost_slices_are_detected(device: A2687Device,
@@ -195,9 +193,9 @@ async def test_on_demand_connection_holds_the_link(
         assert upload.witnessed
         sent = opcodes(charger, start)
         chunks = [index for index, opcode in enumerate(sent)
-                  if opcode == OP_COVER_TRANSFER_CHUNK]
+                  if opcode == Opcode.COVER_TRANSFER_CHUNK]
         # Nothing slipped in between the slices.
         between = sent[chunks[0]:chunks[-1] + 1]
-        assert set(between) == {OP_COVER_TRANSFER_CHUNK}
+        assert set(between) == {Opcode.COVER_TRANSFER_CHUNK}
     finally:
         await device.disconnect()

@@ -59,15 +59,12 @@ from ankerprime.model.product import A2687
 from ankerprime.model.state import DeviceInfo
 from ankerprime.protocol.a2687 import commands, cover
 from ankerprime.protocol.a2687.codes import (
-    CHARGING_MODE_CODES, DISPLAY_LANGUAGE_CODES,
-    FIELD_A1, FIXED_ALLOCATION_CODES, OP_BRIGHTNESS, OP_FIXED_ALLOCATION,
-    OP_COVER_TRANSFER_CHUNK, OP_COVER_TRANSFER_START, OP_GYROSCOPE, OP_LANGUAGE,
-    OP_ORIENTATION, OP_READ_ALL, OP_REALTIME_REPORT, OP_SCREEN_TIMEOUT,
-    OP_SET_SCREENSAVER, OUTPUTS, SCREEN_ORIENTATION_CODES, SCREEN_TIMEOUT_CODES)
+    CHARGING_MODE_CODES, DISPLAY_LANGUAGE_CODES, FIXED_ALLOCATION_CODES,
+    OUTPUTS, SCREEN_ORIENTATION_CODES, SCREEN_TIMEOUT_CODES, FieldId, Opcode)
 from ankerprime.protocol.a2687.commands import OutgoingMessage
 from ankerprime.protocol.a2687.frame import Frame, decode_frame, encode_frame
 from ankerprime.protocol.a2687.telemetry import decode_report
-from ankerprime.protocol.a2687.tlv import TYPE_U8, Payload
+from ankerprime.protocol.a2687.tlv import Payload, ValueType
 from ankerprime.protocol.a2687.tracker import StateTracker
 from ankerprime.protocol.codes import encode_value
 from ankerprime.session.a2687 import A2687Session
@@ -78,7 +75,7 @@ logger = logging.getLogger(__name__)
 
 Callback = Callable[[], None]
 
-REPORT_OPCODES = frozenset({OP_REALTIME_REPORT, OP_READ_ALL})
+REPORT_OPCODES = frozenset({Opcode.REALTIME_REPORT, Opcode.READ_ALL})
 DEFAULT_COUNTRY = 'US'
 
 
@@ -455,31 +452,31 @@ class A2687Device(RunningCharger, ChannelListener):
                                     ) -> None:
         code = encode_value(FIXED_ALLOCATION_CODES, allocation)
         await self._write_setting(
-            OP_FIXED_ALLOCATION, code,
+            Opcode.FIXED_ALLOCATION, code,
             lambda: self._tracker.apply_fixed_allocation(allocation))
 
     async def _set_brightness(self, percent: int) -> None:
         brightness = self._product.brightness
         if brightness is None or not brightness.contains(percent):
             raise InvalidParameterError(f'brightness out of range: {percent}')
-        await self._write_setting(OP_BRIGHTNESS, percent)
+        await self._write_setting(Opcode.BRIGHTNESS, percent)
 
     async def _set_screen_timeout(self, timeout: ScreenTimeout) -> None:
-        await self._write_setting(OP_SCREEN_TIMEOUT,
+        await self._write_setting(Opcode.SCREEN_TIMEOUT,
                                   encode_value(SCREEN_TIMEOUT_CODES, timeout))
 
     async def _set_screen_orientation(self, orientation: ScreenOrientation
                                       ) -> None:
         code = encode_value(SCREEN_ORIENTATION_CODES, orientation)
-        await self._write_setting(OP_ORIENTATION, code)
+        await self._write_setting(Opcode.ORIENTATION, code)
 
     async def _set_auto_rotation(self, enabled: bool) -> None:
-        await self._write_setting(OP_GYROSCOPE, int(enabled))
+        await self._write_setting(Opcode.GYROSCOPE, int(enabled))
 
     async def _set_display_language(self, language: DisplayLanguage) -> None:
         code = encode_value(DISPLAY_LANGUAGE_CODES, language)
         await self._write_setting(
-            OP_LANGUAGE, code, lambda: self._tracker.apply_language(language))
+            Opcode.LANGUAGE, code, lambda: self._tracker.apply_language(language))
 
     async def _apply_custom_profile(self, profile: ChargingProfile) -> None:
         rules = self._product.custom_mode
@@ -529,10 +526,10 @@ class A2687Device(RunningCharger, ChannelListener):
         try:
             # A new picture is answered 0x11 ("pixels missing"): expected.
             await self._request(cover.select_cover(
-                plan.picture_id, plan.crc32, timestamp), (OP_SET_SCREENSAVER,))
+                plan.picture_id, plan.crc32, timestamp), (Opcode.SET_SCREENSAVER,))
             await asyncio.sleep(timings.settle_after_select)
             reply = await self._request(cover.start_transfer(plan, timestamp),
-                                        (OP_COVER_TRANSFER_START,))
+                                        (Opcode.COVER_TRANSFER_START,))
         except ChargerTimeoutError as error:
             raise PictureTransferError(f'screen picture not started: {error}'
                                        ) from None
@@ -576,7 +573,7 @@ class A2687Device(RunningCharger, ChannelListener):
                     await asyncio.sleep(timings.chunk_spacing)
                     continue
                 reply = await self._request(
-                    message, (OP_COVER_TRANSFER_CHUNK,),
+                    message, (Opcode.COVER_TRANSFER_CHUNK,),
                     timeout=timings.acknowledgement_timeout)
             except (ChargerConnectionError, ChargerTimeoutError) as error:
                 raise PictureTransferError(
@@ -894,8 +891,8 @@ def _refusal(reply: Payload) -> int | None:
 
     if not reply.ok:
         return reply.status
-    result = reply.typed(FIELD_A1)
-    if result is not None and result.type_code == TYPE_U8:
+    result = reply.typed(FieldId.A1)
+    if result is not None and result.type_code == ValueType.U8:
         code = result.scalar
         if code:
             return code

@@ -21,11 +21,8 @@ from typing import ClassVar, Self, TypeVar
 
 from ankerprime.model.enums import PortId
 from ankerprime.protocol.a2687.codes import (
-    CONTROL_FIELDS, FIELD_BRIGHTNESS, FIELD_CHARGING_MODE,
-    FIELD_CONNECTED_DEVICES, FIELD_COVER_STATE, FIELD_GYROSCOPE,
-    FIELD_ORIENTATION, FIELD_SCREEN_TIMEOUT, PORT_FIELDS, PORTS)
-from ankerprime.protocol.a2687.tlv import (
-    TYPE_BYTES, TYPE_U8, Payload, TypedValue)
+    CONTROL_FIELDS, PORTS, PORT_FIELDS, FieldId)
+from ankerprime.protocol.a2687.tlv import Payload, TypedValue, ValueType
 
 
 DecodedT = TypeVar('DecodedT')
@@ -33,8 +30,8 @@ DecodedT = TypeVar('DecodedT')
 MAX_SCREEN_TIMEOUT = 4
 MAX_BRIGHTNESS = 100
 MAX_ORIENTATION = 3
-SETTING_FIELDS = (FIELD_SCREEN_TIMEOUT, FIELD_BRIGHTNESS, FIELD_CHARGING_MODE,
-                  FIELD_ORIENTATION, FIELD_GYROSCOPE, FIELD_COVER_STATE)
+SETTING_FIELDS = (FieldId.SCREEN_TIMEOUT, FieldId.BRIGHTNESS, FieldId.CHARGING_MODE,
+                  FieldId.ORIENTATION, FieldId.GYROSCOPE, FieldId.COVER_STATE)
 
 
 @dataclass(init=False)
@@ -306,7 +303,7 @@ def decode_report(payload: Payload) -> Report:
 
 
 def _identities(payload: Payload) -> dict[PortId, UsbIdentity]:
-    raw = payload.get(FIELD_CONNECTED_DEVICES)
+    raw = payload.get(FieldId.CONNECTED_DEVICES)
     if raw is None:
         return {}
     block = raw
@@ -326,13 +323,13 @@ def _identities(payload: Payload) -> dict[PortId, UsbIdentity]:
 def _settings(payload: Payload) -> DeviceSettings | None:
     if not any(payload.get(field) is not None for field in SETTING_FIELDS):
         return None
-    timeout = _setting_byte(payload, FIELD_SCREEN_TIMEOUT, MAX_SCREEN_TIMEOUT)
-    brightness = _setting_byte(payload, FIELD_BRIGHTNESS, MAX_BRIGHTNESS)
-    orientation = _setting_byte(payload, FIELD_ORIENTATION, MAX_ORIENTATION)
-    rotation = _setting_byte(payload, FIELD_GYROSCOPE, 1)
+    timeout = _setting_byte(payload, FieldId.SCREEN_TIMEOUT, MAX_SCREEN_TIMEOUT)
+    brightness = _setting_byte(payload, FieldId.BRIGHTNESS, MAX_BRIGHTNESS)
+    orientation = _setting_byte(payload, FieldId.ORIENTATION, MAX_ORIENTATION)
+    rotation = _setting_byte(payload, FieldId.GYROSCOPE, 1)
     return DeviceSettings(
         screen_timeout=timeout, brightness=brightness,
-        charging_mode=_setting_byte(payload, FIELD_CHARGING_MODE),
+        charging_mode=_setting_byte(payload, FieldId.CHARGING_MODE),
         orientation=orientation,
         auto_rotation=None if rotation is None else rotation == 1,
         screen_picture=_screen_picture(payload))
@@ -341,7 +338,7 @@ def _settings(payload: Payload) -> DeviceSettings | None:
 def _screen_picture(payload: Payload) -> int | None:
     """``E1``: bytes 2-3 of a ten-byte block are the picture shown."""
 
-    value = payload.typed(FIELD_COVER_STATE)
+    value = payload.typed(FieldId.COVER_STATE)
     if value is None or len(value.body) < 4:
         return None
     return _u16(value.body, 2)
@@ -357,7 +354,7 @@ def _setting_byte(payload: Payload, field: int,
     value = None
     if len(raw) == 1:
         value = raw[0]
-    elif len(raw) == 2 and raw[0] in (TYPE_U8, TYPE_BYTES):
+    elif len(raw) == 2 and raw[0] in (ValueType.U8, ValueType.BYTES):
         value = raw[1]
     return value if value is not None and value <= maximum else None
 

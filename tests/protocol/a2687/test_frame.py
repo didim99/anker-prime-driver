@@ -3,8 +3,7 @@
 import pytest
 
 from ankerprime.protocol.a2687.codes import (
-    NEGOTIATION_GROUP, OP_BASE_INFO, OP_INITIAL_CONNECT,
-    OP_PORT_OUTPUT, OP_PUBLIC_KEY, SESSION_GROUP)
+    NEGOTIATION_GROUP, SESSION_GROUP, Opcode)
 from ankerprime.protocol.a2687.frame import (
     Frame, FrameReassembler, decode_frame, encode_frame)
 from ankerprime.protocol.ff09 import FrameError
@@ -15,7 +14,7 @@ from tests.protocol.a2687.fixtures import (
 
 def test_decodes_client_request() -> None:
     frame = decode_frame(CLIENT_INITIAL_CONNECT)
-    assert frame.opcode == OP_INITIAL_CONNECT
+    assert frame.opcode == Opcode.INITIAL_CONNECT
     assert frame.raw_command == 0x4001
     assert frame.encrypted
     assert not frame.response
@@ -26,7 +25,7 @@ def test_decodes_client_request() -> None:
 
 def test_decodes_device_reply() -> None:
     frame = decode_frame(DEVICE_PUBLIC_KEY)
-    assert frame.opcode == OP_PUBLIC_KEY
+    assert frame.opcode == Opcode.PUBLIC_KEY
     assert frame.raw_command == 0x4821
     assert frame.encrypted and frame.response and frame.from_device
     # This firmware answers with the request's speaker and group.
@@ -41,12 +40,12 @@ def test_reencodes_captures_byte_exact(captured: bytes) -> None:
 
 
 def test_build_sets_flags() -> None:
-    frame = Frame.build(SESSION_GROUP, OP_PORT_OUTPUT, b'\x01', encrypted=True,
+    frame = Frame.build(SESSION_GROUP, Opcode.PORT_OUTPUT, b'\x01', encrypted=True,
                         response=True)
     assert frame.raw_command == 0x4A07
-    assert frame.opcode == OP_PORT_OUTPUT
-    plain = Frame.build(NEGOTIATION_GROUP, OP_BASE_INFO, b'', encrypted=False)
-    assert plain.raw_command == OP_BASE_INFO
+    assert frame.opcode == Opcode.PORT_OUTPUT
+    plain = Frame.build(NEGOTIATION_GROUP, Opcode.BASE_INFO, b'', encrypted=False)
+    assert plain.raw_command == Opcode.BASE_INFO
     assert decode_frame(encode_frame(plain)).payload == b''
 
 
@@ -63,7 +62,7 @@ def test_reassembles_split_and_coalesced_notifications() -> None:
     frames = []
     for start in range(0, len(stream), 20):
         frames += reassembler.feed(stream[start:start + 20])
-    assert [frame.opcode for frame in frames] == [OP_PUBLIC_KEY,
-                                                  OP_INITIAL_CONNECT]
+    assert [frame.opcode for frame in frames] == [Opcode.PUBLIC_KEY,
+                                                  Opcode.INITIAL_CONNECT]
     frames = reassembler.feed(b'\x00\x01garbage' + CLIENT_BASE_INFO)
-    assert [frame.opcode for frame in frames] == [OP_BASE_INFO]
+    assert [frame.opcode for frame in frames] == [Opcode.BASE_INFO]

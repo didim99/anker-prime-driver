@@ -20,9 +20,7 @@ from dataclasses import dataclass
 
 from ankerprime.model.errors import InvalidParameterError
 from ankerprime.protocol.a2687.codes import (
-    FIELD_A1, FIELD_A2, FIELD_A3, FIELD_A4, FIELD_A5, FIELD_A6, FIELD_A7,
-    FIELD_A8, FIELD_URL, OP_COVER_TRANSFER_CHUNK, OP_COVER_TRANSFER_START,
-    OP_SET_SCREENSAVER, SESSION_ACTION, SESSION_GROUP)
+    SESSION_ACTION, SESSION_GROUP, FieldId, Opcode)
 from ankerprime.protocol.a2687.commands import (
     Encryption, OutgoingMessage, session)
 from ankerprime.protocol.a2687.tlv import (
@@ -126,25 +124,25 @@ def select_cover(picture_id: int, crc32: int, timestamp: int,
 
     if len(url_key.encode('utf-8')) > MAX_URL_LENGTH:
         raise InvalidParameterError('cover URL key too long')
-    return session(OP_SET_SCREENSAVER, [
-        (FIELD_A3, typed_u8(CUSTOM_SCREENSAVER)),
-        (FIELD_A4, typed_bytes(u32le(picture_id))),
-        (FIELD_A5, typed_bytes(u32le(crc32))),
-        (FIELD_URL, typed_text(url_key)),
+    return session(Opcode.SET_SCREENSAVER, [
+        (FieldId.A3, typed_u8(CUSTOM_SCREENSAVER)),
+        (FieldId.A4, typed_bytes(u32le(picture_id))),
+        (FieldId.A5, typed_bytes(u32le(crc32))),
+        (FieldId.URL, typed_text(url_key)),
     ], timestamp, typed_timestamp=True)
 
 
 def start_transfer(plan: CoverPlan, timestamp: int) -> OutgoingMessage:
     """``0x0220``: announce the size and slicing of the transfer."""
 
-    return session(OP_COVER_TRANSFER_START, [
-        (FIELD_A2, typed_u8(1)),
-        (FIELD_A3, typed_bytes(u32le(plan.picture_id))),
-        (FIELD_A4, typed_bytes(u32le(plan.crc32))),
-        (FIELD_A5, typed_u32(plan.byte_count)),
-        (FIELD_A6, typed_u8(ACKNOWLEDGE_EVERY)),
-        (FIELD_A7, typed_u16(CHUNK_SIZE)),
-        (FIELD_A8, typed_u16(plan.chunk_count)),
+    return session(Opcode.COVER_TRANSFER_START, [
+        (FieldId.A2, typed_u8(1)),
+        (FieldId.A3, typed_bytes(u32le(plan.picture_id))),
+        (FieldId.A4, typed_bytes(u32le(plan.crc32))),
+        (FieldId.A5, typed_u32(plan.byte_count)),
+        (FieldId.A6, typed_u8(ACKNOWLEDGE_EVERY)),
+        (FieldId.A7, typed_u16(CHUNK_SIZE)),
+        (FieldId.A8, typed_u16(plan.chunk_count)),
     ], timestamp, typed_timestamp=True)
 
 
@@ -153,16 +151,16 @@ def transfer_chunk(index: int, payload: bytes) -> OutgoingMessage:
 
     if len(payload) != CHUNK_SIZE:
         raise InvalidParameterError('slice must be padded to 156 bytes')
-    fields = [(FIELD_A1, bytes((SESSION_ACTION,))),
-              (FIELD_A2, typed_u16(index)), (FIELD_A3, typed_bytes(payload))]
-    return OutgoingMessage(SESSION_GROUP, OP_COVER_TRANSFER_CHUNK,
+    fields = [(FieldId.A1, bytes((SESSION_ACTION,))),
+              (FieldId.A2, typed_u16(index)), (FieldId.A3, typed_bytes(payload))]
+    return OutgoingMessage(SESSION_GROUP, Opcode.COVER_TRANSFER_CHUNK,
                            encode_fields(fields), Encryption.SESSION)
 
 
 def next_index(reply: Payload) -> int | None:
     """The slice the firmware expects next, from a checkpoint's answer."""
 
-    raw = reply.get(FIELD_A2)
+    raw = reply.get(FieldId.A2)
     if raw is None:
         return None
     value = TypedValue.decode(raw)

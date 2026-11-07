@@ -14,22 +14,19 @@ from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.model.errors import ChargerConnectionError
 from ankerprime.protocol.a2687 import codes
 from ankerprime.protocol.a2687.codes import (
-    FIELD_A1, FIELD_A2, FIELD_A3, FIELD_A4,
-    FIELD_A5, NEGOTIATION_GROUP, OP_AES_METADATA, OP_BRIGHTNESS,
-    OP_FIXED_ALLOCATION, OP_GYROSCOPE, OP_LANGUAGE, OP_ORIENTATION,
-    OP_READ_ALL, OP_REALTIME_REPORT, OP_SCREEN_TIMEOUT,
-    PORT_FIELDS, CONTROL_FIELDS, SESSION_ACTION, SESSION_GROUP)
+    CONTROL_FIELDS, NEGOTIATION_GROUP, PORT_FIELDS,
+    SESSION_ACTION, SESSION_GROUP, FieldId, Opcode)
 from ankerprime.protocol.a2687.crypto import (
     NEGOTIATION_KEYS, CryptoError, EphemeralKey, SessionKeys)
 from ankerprime.protocol.a2687.frame import (
     Frame, FrameReassembler, encode_frame)
 from ankerprime.protocol.a2687.tlv import (
-    TYPE_U8, Payload, encode_fields, typed_bytes, typed_u8, typed_u16)
+    Payload, ValueType, encode_fields, typed_bytes, typed_u16, typed_u8)
 
 
 IDLE_CONTROL = bytes.fromhex('01002c0100002c010000')
-SETTING_OPCODES = (OP_LANGUAGE, OP_SCREEN_TIMEOUT, OP_BRIGHTNESS,
-                   OP_ORIENTATION, OP_GYROSCOPE, OP_FIXED_ALLOCATION)
+SETTING_OPCODES = (Opcode.LANGUAGE, Opcode.SCREEN_TIMEOUT, Opcode.BRIGHTNESS,
+                   Opcode.ORIENTATION, Opcode.GYROSCOPE, Opcode.FIXED_ALLOCATION)
 NOTIFICATION_SIZE = 20
 
 
@@ -115,7 +112,7 @@ class SimulatedCharger:
             replies += self._respond(frame)
         return replies
 
-    def report(self, opcode: int = OP_REALTIME_REPORT) -> bytes | None:
+    def report(self, opcode: int = Opcode.REALTIME_REPORT) -> bytes | None:
         if self._session is None or not self._open or self.muted:
             return None
         return self._seal(SESSION_GROUP, opcode, False, self._state(),
@@ -123,7 +120,7 @@ class SimulatedCharger:
 
     def _respond(self, frame: Frame) -> list[bytes]:
         keys = NEGOTIATION_KEYS
-        if frame.opcode >= OP_AES_METADATA and self._session is not None:
+        if frame.opcode >= Opcode.AES_METADATA and self._session is not None:
             keys = self._session
         try:
             request = Payload.parse(keys.open(frame.payload))
@@ -141,33 +138,33 @@ class SimulatedCharger:
     def _negotiate(self, frame: Frame, request: Payload) -> list[bytes]:
         negotiation = NEGOTIATION_KEYS
         match frame.opcode:
-            case codes.OP_INITIAL_CONNECT:
-                return [self._ack(frame, [(FIELD_A1, b'\x01')], negotiation)]
-            case codes.OP_CAPABILITY:
+            case codes.Opcode.INITIAL_CONNECT:
+                return [self._ack(frame, [(FieldId.A1, b'\x01')], negotiation)]
+            case codes.Opcode.CAPABILITY:
                 return [self._ack(frame, [
-                    (FIELD_A1, b'\x02'), (FIELD_A2, b'\x29\x01'),
-                    (FIELD_A3, b'\x44'), (FIELD_A4, b'\x01'),
-                    (FIELD_A5, b'\x02')], negotiation)]
-            case codes.OP_BASE_INFO:
+                    (FieldId.A1, b'\x02'), (FieldId.A2, b'\x29\x01'),
+                    (FieldId.A3, b'\x44'), (FieldId.A4, b'\x01'),
+                    (FieldId.A5, b'\x02')], negotiation)]
+            case codes.Opcode.BASE_INFO:
                 serial = self.serial.encode()
                 return [self._ack(frame, [
-                    (FIELD_A1, b'\x03'), (FIELD_A2, b'Charging'),
-                    (FIELD_A3, self.firmware.encode()), (FIELD_A4, serial),
-                    (FIELD_A5, self.mac + serial[-11:])], negotiation)]
-            case codes.OP_SET_CAPABILITY:
+                    (FieldId.A1, b'\x03'), (FieldId.A2, b'Charging'),
+                    (FieldId.A3, self.firmware.encode()), (FieldId.A4, serial),
+                    (FieldId.A5, self.mac + serial[-11:])], negotiation)]
+            case codes.Opcode.SET_CAPABILITY:
                 return [self._ack(frame, [], negotiation)]
-            case codes.OP_PUBLIC_KEY:
-                point = request.get(FIELD_A1)
+            case codes.Opcode.PUBLIC_KEY:
+                point = request.get(FieldId.A1)
                 if point is None:
                     return []
                 self._session = SessionKeys.from_shared_secret(
                     self._key.shared_secret(point))
-                return [self._ack(frame, [(FIELD_A1, self._key.public_point)],
+                return [self._ack(frame, [(FieldId.A1, self._key.public_point)],
                                   negotiation)]
-            case codes.OP_AES_METADATA if self._session is not None:
+            case codes.Opcode.AES_METADATA if self._session is not None:
                 return [self._ack(frame, [], self._session)]
-            case codes.OP_USER_AUTH if self._session is not None:
-                identity = request.get(FIELD_A2)
+            case codes.Opcode.USER_AUTH if self._session is not None:
+                identity = request.get(FieldId.A2)
                 self.identity = None if identity is None else identity.decode()
                 if (self.required_identity is not None
                         and self.identity != self.required_identity):
@@ -183,45 +180,45 @@ class SimulatedCharger:
         if refusal is not None:
             return [self._seal(frame.group, frame.opcode, True,
                                bytes((refusal,)), keys)]
-        value = _u8(request.get(FIELD_A2))
+        value = _u8(request.get(FieldId.A2))
         match frame.opcode:
-            case codes.OP_READ_ALL:
-                return [self._seal(SESSION_GROUP, OP_READ_ALL, True,
+            case codes.Opcode.READ_ALL:
+                return [self._seal(SESSION_GROUP, Opcode.READ_ALL, True,
                                    self._state(), keys)]
-            case codes.OP_BIND_SUCCESS:
+            case codes.Opcode.BIND_SUCCESS:
                 return [self._ack(frame, [], keys)]
-            case codes.OP_REALTIME_TRIGGER if value is None:
+            case codes.Opcode.REALTIME_TRIGGER if value is None:
                 self.streaming = True
                 return [self._ack(frame, [], keys)]
-            case codes.OP_PORT_OUTPUT:
-                on = _u8(request.get(FIELD_A3))
+            case codes.Opcode.PORT_OUTPUT:
+                on = _u8(request.get(FieldId.A3))
                 if value is None or on is None or value >= len(self.ports):
                     return []
                 if not self.port_refusal:
                     self.ports[value].on = bool(on)
                 return [self._ack(frame, [
-                    (FIELD_A1, typed_u8(self.port_refusal))], keys),
-                    self._seal(SESSION_GROUP, OP_REALTIME_REPORT, False,
+                    (FieldId.A1, typed_u8(self.port_refusal))], keys),
+                    self._seal(SESSION_GROUP, Opcode.REALTIME_REPORT, False,
                                self._state(), keys)]
-            case codes.OP_PORT_TIMER:
-                duration = request.typed(FIELD_A3)
+            case codes.Opcode.PORT_TIMER:
+                duration = request.typed(FieldId.A3)
                 if (value is None or duration is None or duration.block is None
                         or value >= len(self.ports)):
                     return []
                 self.ports[value].countdown = int.from_bytes(duration.block,
                                                              'little')
                 return [self._ack(frame, [], keys)]
-            case codes.OP_CHARGING_MODE if value is not None:
-                if value == 2 and request.get(FIELD_A3) is None:
+            case codes.Opcode.CHARGING_MODE if value is not None:
+                if value == 2 and request.get(FieldId.A3) is None:
                     return [self._seal(frame.group, frame.opcode, True,
                                        b'\x04', keys)]
                 if value == 2:
-                    power = request.typed(FIELD_A3)
+                    power = request.typed(FieldId.A3)
                     self.custom_power = power.block if power else None
                 self.settings[0xAA] = value
                 return [self._ack(frame, [], keys)]
-            case codes.OP_SET_SCREENSAVER | codes.OP_COVER_TRANSFER_START | (
-                    codes.OP_COVER_TRANSFER_CHUNK):
+            case codes.Opcode.SET_SCREENSAVER | codes.Opcode.COVER_TRANSFER_START | (
+                    codes.Opcode.COVER_TRANSFER_CHUNK):
                 return self._cover(frame, request, keys)
         if frame.opcode in SETTING_OPCODES and value is not None:
             self._apply_setting(frame.opcode, value)
@@ -230,29 +227,29 @@ class SimulatedCharger:
 
     def _cover(self, frame: Frame, request: Payload,
                keys: SessionKeys) -> list[bytes]:
-        if frame.opcode == codes.OP_SET_SCREENSAVER:
-            picture_id = _block_u32(request, FIELD_A4)
-            crc = _block_u32(request, FIELD_A5)
+        if frame.opcode == codes.Opcode.SET_SCREENSAVER:
+            picture_id = _block_u32(request, FieldId.A4)
+            crc = _block_u32(request, FieldId.A5)
             if self.stored_pictures.get(picture_id) != crc:
                 # Known id, pixels missing.
                 return [self._status(frame, 0x11, [], keys)]
             self.screen_picture = picture_id & 0xFFFF
             return [self._ack(frame, [], keys)]
-        if frame.opcode == codes.OP_COVER_TRANSFER_START:
+        if frame.opcode == codes.Opcode.COVER_TRANSFER_START:
             if self.cover_refusal:
                 return [self._status(frame, self.cover_refusal, [], keys)]
-            size = request.typed(FIELD_A5)
-            count = request.typed(codes.FIELD_A8)
+            size = request.typed(FieldId.A5)
+            count = request.typed(codes.FieldId.A8)
             assert size is not None and count is not None
-            self._transfer = {'id': _block_u32(request, FIELD_A3),
-                              'crc': _block_u32(request, FIELD_A4),
+            self._transfer = {'id': _block_u32(request, FieldId.A3),
+                              'crc': _block_u32(request, FieldId.A4),
                               'size': size.scalar or 0,
                               'count': count.scalar or 0}
             self._slices = {}
             return [self._ack(frame, [], keys)]
         transfer = self._transfer
-        index = request.typed(FIELD_A2)
-        data = request.typed(FIELD_A3)
+        index = request.typed(FieldId.A2)
+        data = request.typed(FieldId.A3)
         assert transfer is not None and index is not None and data is not None
         position = index.scalar or 0
         self._slices[position] = data.block or b''
@@ -273,7 +270,7 @@ class SimulatedCharger:
                 if not self.cover_hide:
                     self.screen_picture = transfer['id'] & 0xFFFF
                 status = 0x10
-        return [self._status(frame, status, [(FIELD_A2, typed_u16(expected))],
+        return [self._status(frame, status, [(FieldId.A2, typed_u16(expected))],
                              keys)]
 
     def _status(self, frame: Frame, status: int,
@@ -283,21 +280,22 @@ class SimulatedCharger:
 
     def _apply_setting(self, opcode: int, value: int) -> None:
         match opcode:
-            case codes.OP_LANGUAGE:
+            case codes.Opcode.LANGUAGE:
                 self.language = value
-            case codes.OP_FIXED_ALLOCATION:
+            case codes.Opcode.FIXED_ALLOCATION:
                 self.allocation = value
-            case codes.OP_SCREEN_TIMEOUT:
+            case codes.Opcode.SCREEN_TIMEOUT:
                 self.settings[0xA8] = value
-            case codes.OP_BRIGHTNESS:
+            case codes.Opcode.BRIGHTNESS:
                 self.settings[0xA9] = max(25, value)
-            case codes.OP_ORIENTATION:
+            case codes.Opcode.ORIENTATION:
                 self.settings[0xAF] = value
-            case codes.OP_GYROSCOPE:
+            case codes.Opcode.GYROSCOPE:
                 self.settings[0xB2] = value
 
     def _state(self) -> bytes:
-        fields = [(FIELD_A1, bytes((SESSION_ACTION,)))]
+        fields: list[tuple[int, bytes]] = [
+            (FieldId.A1, bytes((SESSION_ACTION,)))]
         for port, field_id, control_id in zip(self.ports, PORT_FIELDS,
                                               CONTROL_FIELDS, strict=True):
             millivolts = round(port.voltage * 1000) if port.on else 0
@@ -316,7 +314,7 @@ class SimulatedCharger:
         for tag, value in self.settings.items():
             fields.append((tag, typed_u8(value)))
         if self.screen_picture is not None:
-            fields.append((codes.FIELD_COVER_STATE, typed_bytes(
+            fields.append((codes.FieldId.COVER_STATE, typed_bytes(
                 b'\x00\x03' + self.screen_picture.to_bytes(2, 'little')
                 + bytes(6))))
         return b'\x00' + encode_fields(fields)
@@ -339,7 +337,7 @@ def _block_u32(request: Payload, tag: int) -> int:
 
 
 def _u8(raw: bytes | None) -> int | None:
-    if raw is None or len(raw) != 2 or raw[0] != TYPE_U8:
+    if raw is None or len(raw) != 2 or raw[0] != ValueType.U8:
         return None
     return raw[1]
 

@@ -7,6 +7,7 @@ preserved in ``unknown_fields``.
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from enum import IntEnum
 from types import MappingProxyType
 
 from ankerprime.model.enums import PortId
@@ -14,35 +15,39 @@ from ankerprime.protocol.a2345.device_settings import DeviceSettings
 from ankerprime.protocol.a2345.fields import (
     FieldReader, MessageError, MessageErrorKind)
 from ankerprime.protocol.a2345.frame import (
-    TAG_SESSION, TAG_TIMESTAMP, VALUE_TYPE_BYTES,
-    VALUE_TYPE_U32, Frame, Message, Tlv)
+    TAG_SESSION, TAG_TIMESTAMP, Frame, Message, MessageType, Tlv, ValueType)
+from ankerprime.protocol.a2345.settings import SnapshotTag
 from ankerprime.protocol.a2345.updates import (
     decode_settings_change, decode_write_acknowledgement)
 
 
-MSG_REALTIME = 0x0303
-MSG_VERSION_INFO = 0x0830
-MSG_STATUS_SNAPSHOT = 0x0A00
-MSG_REALTIME_ACK = 0x0A0B
-TELEMETRY_ACK_TYPES = frozenset({0x0A0A, MSG_REALTIME_ACK, 0x0A14})
+TELEMETRY_ACK_TYPES = frozenset({0x0A0A, MessageType.REALTIME_ACK, 0x0A14})
 
 PORTS = (PortId.C1, PortId.C2, PortId.C3, PortId.C4, PortId.A1, PortId.A2)
 USB_C_PORTS = PORTS[:4]
 
-TAG_REALTIME_FIRST_PORT = 0xA2
-TAG_SNAPSHOT_FIRST_PORT = 0xA4
-TAG_METADATA = 0xA8
-TAG_PROVISIONAL_METADATA = 0xA9
-TAG_HARDWARE_VERSION = 0xA1
-TAG_SOFTWARE_VERSION = 0xA2
-TAG_PRODUCT_CODE = 0xA3
-TAG_MCU_COMPONENT = 0xA4
-TAG_ESP32_COMPONENT = 0xA5
 
-VALUE_TYPE_STRING = 0x00
 PORT_PAYLOAD_LENGTH = 7
 SLOT_LENGTH = 4
 ACK_FRAME_LENGTH = 14
+
+
+class RealtimeTag(IntEnum):
+    """Field tags of the ``0x0303`` realtime telemetry."""
+
+    FIRST_PORT = 0xA2
+    METADATA = 0xA8
+    PROVISIONAL_METADATA = 0xA9
+
+
+class VersionTag(IntEnum):
+    """Field tags of the ``0x0830`` version information."""
+
+    HARDWARE_VERSION = 0xA1
+    SOFTWARE_VERSION = 0xA2
+    PRODUCT_CODE = 0xA3
+    MCU_COMPONENT = 0xA4
+    ESP32_COMPONENT = 0xA5
 
 
 @dataclass(init=False)
@@ -340,11 +345,11 @@ def decode_message(frame: Frame) -> Message:
     ``decode_acknowledgement`` for their marker.
     """
 
-    if frame.message_type == MSG_REALTIME:
+    if frame.message_type == MessageType.REALTIME:
         return decode_realtime(frame)
-    if frame.message_type == MSG_STATUS_SNAPSHOT:
+    if frame.message_type == MessageType.STATUS_SNAPSHOT:
         return decode_status_snapshot(frame)
-    if frame.message_type == MSG_VERSION_INFO:
+    if frame.message_type == MessageType.VERSION_INFO:
         return decode_version_info(frame)
     change = decode_settings_change(frame)
     if change is not None:
@@ -358,13 +363,13 @@ def decode_message(frame: Frame) -> Message:
 def decode_realtime(frame: Frame) -> RealtimeTelemetry:
     """Decode a ``0x0303`` frame; optional metadata never fails the message."""
 
-    _check_message_type(frame, MSG_REALTIME)
+    _check_message_type(frame, MessageType.REALTIME)
     reader = FieldReader(frame)
     ports = {port: decode_port_reading(reader.required(tag))
-             for tag, port in enumerate(PORTS, TAG_REALTIME_FIRST_PORT)}
+             for tag, port in enumerate(PORTS, RealtimeTag.FIRST_PORT)}
 
-    metadata = _decode_metadata(reader, TAG_METADATA)
-    provisional = _decode_metadata(reader, TAG_PROVISIONAL_METADATA)
+    metadata = _decode_metadata(reader, RealtimeTag.METADATA)
+    provisional = _decode_metadata(reader, RealtimeTag.PROVISIONAL_METADATA)
 
     response_marker = None
     marker = reader.unique(TAG_SESSION)
@@ -375,7 +380,7 @@ def decode_realtime(frame: Frame) -> RealtimeTelemetry:
     timestamp = None
     stamp = reader.unique(TAG_TIMESTAMP)
     if (stamp is not None and len(stamp.raw) == 5
-            and stamp.raw[0] == VALUE_TYPE_U32):
+            and stamp.raw[0] == ValueType.U32):
         reader.consume(TAG_TIMESTAMP)
         timestamp = int.from_bytes(stamp.raw[1:], 'little')
 
@@ -389,22 +394,22 @@ def decode_realtime(frame: Frame) -> RealtimeTelemetry:
 def decode_status_snapshot(frame: Frame) -> StatusSnapshot:
     """Decode a ``0x0A00`` frame: strict port readings, lenient settings."""
 
-    _check_message_type(frame, MSG_STATUS_SNAPSHOT)
+    _check_message_type(frame, MessageType.STATUS_SNAPSHOT)
     reader = FieldReader(frame)
     ports = {port: decode_port_reading(reader.required(tag))
-             for tag, port in enumerate(PORTS, TAG_SNAPSHOT_FIRST_PORT)}
+             for tag, port in enumerate(PORTS, SnapshotTag.FIRST_PORT)}
     settings = DeviceSettings.from_snapshot(frame)
     return StatusSnapshot(ports, settings, reader.unconsumed())
 
 
 def decode_version_info(frame: Frame) -> VersionInfo:
-    _check_message_type(frame, MSG_VERSION_INFO)
+    _check_message_type(frame, MessageType.VERSION_INFO)
     reader = FieldReader(frame)
-    hardware = decode_string(reader.required(TAG_HARDWARE_VERSION))
-    software = decode_string(reader.required(TAG_SOFTWARE_VERSION))
-    product = _optional_string(reader, TAG_PRODUCT_CODE)
-    mcu = _optional_string(reader, TAG_MCU_COMPONENT)
-    esp32 = _optional_string(reader, TAG_ESP32_COMPONENT)
+    hardware = decode_string(reader.required(VersionTag.HARDWARE_VERSION))
+    software = decode_string(reader.required(VersionTag.SOFTWARE_VERSION))
+    product = _optional_string(reader, VersionTag.PRODUCT_CODE)
+    mcu = _optional_string(reader, VersionTag.MCU_COMPONENT)
+    esp32 = _optional_string(reader, VersionTag.ESP32_COMPONENT)
     return VersionInfo(hardware_version=hardware,
                        software_version=software.removeprefix('v'),
                        product_code=product, mcu_component=mcu,
@@ -435,7 +440,7 @@ def decode_port_reading(field: Tlv) -> RawPortReading:
     charge need more than eight payload bytes, the brand more than nine.
     """
 
-    value = typed_payload(field, VALUE_TYPE_BYTES, PORT_PAYLOAD_LENGTH)
+    value = typed_payload(field, ValueType.BYTES, PORT_PAYLOAD_LENGTH)
     millivolts = int.from_bytes(value[1:3], 'little')
     milliamps = int.from_bytes(value[3:5], 'little')
     centiwatts = int.from_bytes(value[5:7], 'little')
@@ -468,10 +473,10 @@ def decode_string(field: Tlv) -> str:
     """
 
     raw = field.raw
-    if not raw or (raw[0] != VALUE_TYPE_STRING and raw[0] < 0x20):
+    if not raw or (raw[0] != ValueType.STRING and raw[0] < 0x20):
         raise MessageError(MessageErrorKind.UNEXPECTED_FIELD_TYPE,
                            'not a string', field.tag)
-    if raw[0] == VALUE_TYPE_STRING:
+    if raw[0] == ValueType.STRING:
         raw = raw[1:]
     try:
         return raw.rstrip(b'\x00').decode('utf-8')
@@ -493,7 +498,7 @@ def _decode_metadata(reader: FieldReader, tag: int
     if field is None:
         return None
     if (len(field.raw) != 1 + SLOT_LENGTH * len(USB_C_PORTS)
-            or field.raw[0] != VALUE_TYPE_BYTES):
+            or field.raw[0] != ValueType.BYTES):
         return None
     reader.consume(tag)
     payload = field.raw[1:]
