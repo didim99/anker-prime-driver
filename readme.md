@@ -75,6 +75,26 @@ Formatting and import order follow the project codestyle by hand; `ruff check`
 verifies line length and common lint rules. Release builds use
 `python -m build` and `twine`.
 
+### Tests on a real 250W
+
+`tests/hardware` changes settings of a real charger and of the Anker account
+through the cloud, checks that the charger reports each change, and puts the
+original value back. It uses the login stored by `ankerprime login` and runs
+only when asked:
+
+```bash
+pytest tests/hardware --hardware -rs
+```
+
+The charger is the CLI's default one, or `--hardware-serial SERIAL`. Writes
+that cannot be undone are never made: no own picture is shown on the charger
+(an uploaded test picture is deleted from the account again), and schedule
+slots that were never set are skipped, since the charger has no "unset"
+value to restore. Outputs are switched only when one is on and powers
+nothing. The last test compares every touched value with the state found at
+the start. `--hardware-settle SECONDS` sets the wait for a read-back
+(default 4).
+
 ## Credits
 
 The protocol knowledge comes from [Charker](https://github.com/qzz0518/Charker)
