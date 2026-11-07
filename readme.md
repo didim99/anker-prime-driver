@@ -19,10 +19,10 @@ which is built on this library.
 
 ## Supported chargers
 
-| Model | Name                     | Connection                              | Verified on hardware              |
-|-------|--------------------------|-----------------------------------------|-----------------------------------|
-| A2345 | Anker Prime Charger 250W | Anker cloud (account + MQTT over Wi-Fi) | everything except the UFCS switch |
-| A2687 | Anker Prime 160W         | Bluetooth LE (local)                    | display settings (by Charker)     |
+| Model | Name                     | Connection                              | Verified on hardware                                             |
+|-------|--------------------------|-----------------------------------------|------------------------------------------------------------------|
+| A2345 | Anker Prime Charger 250W | Anker cloud (account + MQTT over Wi-Fi) | everything except the UFCS switch and showing own clock pictures |
+| A2687 | Anker Prime 160W         | Bluetooth LE (local)                    | display settings (by Charker)                                    |
 
 The 250W must be bound to an Anker account in the Anker app; mainland China
 accounts sign in with a phone number and an SMS code. The 160W accepts one

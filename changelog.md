@@ -9,14 +9,16 @@ with every other change; documentation-only changes keep the version.
 0.7.3 is the first version published on PyPI; earlier numbers were assigned
 to the development history afterwards.
 
-## [0.8.0] - 2026-11-07
+## [0.8.0] - 2026-11-08
 
 The remaining features of Charker: custom charging on both models, clock
-pictures (250W), the screen picture (160W) and mainland China accounts. All
-are experimental: implemented from Charker, not yet confirmed on hardware.
+pictures (250W), the screen picture (160W) and mainland China accounts. On
+the 250W, custom charging and catalogue clock pictures are confirmed on
+hardware; own pictures (shown on the charger), the 160W features and
+mainland accounts stay experimental.
 
 ### Added
-- 250W custom charging mode (experimental):
+- 250W custom charging mode (verified on hardware):
   - `ChargingProfile` with per-output limits and fast-charge protocols;
     `product.custom_mode` (`CustomModeRules`) with the limits, the Anker
     app's defaults and validation, including mainland China limits;
@@ -32,7 +34,8 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
   runs one with the account's re-login.
 - CLI: `custom-mode list|show|add|edit|delete|apply|exit` and `labs`;
   `status` shows the profile in use and the custom mode setting.
-- 250W clock pictures (experimental):
+- 250W clock pictures (catalogue verified on hardware, own pictures
+  experimental):
   - the cloud catalogue (`clock_pictures()`, English or Chinese titles) and
     the account's own pictures (`own_clock_pictures()`, at most eight) as
     `ClockPicture`;
@@ -41,7 +44,7 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
     re-listed first for a fresh link;
   - `upload_clock_picture()`, `delete_clock_picture()`, `set_picture_time()`;
   - state: `clock.picture_id`, `clock.picture_time`; capabilities
-    `clock_picture` (now experimental) and `own_clock_pictures`.
+    `clock_picture` (verified) and `own_clock_pictures` (experimental).
 - `ankerprime.pictures.prepare_picture()` and the `[pictures]` extra
   (Pillow): fill-crop to 480×200 and a JPEG in the official size window.
 - `HttpClient.put()` for signed uploads; `CloudClient.upload()`.

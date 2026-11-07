@@ -38,7 +38,7 @@ def test_catalogue_and_apply(cli: Cli) -> None:
     code, out = cli.run('clock-picture', 'apply', '32')
     assert code == 0
     assert 'Picture shown; clock switched on.' in out
-    assert 'not yet verified' in out
+    assert 'not yet verified' not in out
     code, _ = cli.run('clock-picture', 'apply', '99')
     assert code == EXIT_ERROR
 

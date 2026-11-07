@@ -41,7 +41,7 @@ def test_add_list_show_edit_delete(cli: Cli) -> None:
     code, out = cli.run('custom-mode', 'add', '2', 'Desk', '--c1', '60',
                         '--protocols', 'c1=ufcs,pd_12v', '--auto-exit', 'on')
     assert code == 0 and 'Profile 2 stored.' in out
-    assert 'not yet verified' in out
+    assert 'not yet verified' not in out
     stored = list(cli.cloud.mini_power.profiles.values())
     assert len(stored) == 1
     body = stored[0]

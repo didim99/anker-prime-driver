@@ -44,6 +44,12 @@ def test_unknown_port_and_output_raise() -> None:
 
 def test_capability_lookup() -> None:
     assert A2345.verification(Capability.OUTPUT_SWITCH) == Verification.VERIFIED
+    # Confirmed by the hardware suite (tests/hardware) on firmware 2.1.1.6.
+    for capability in (Capability.CUSTOM_CHARGING_MODE,
+                       Capability.CUSTOM_PROFILES, Capability.CLOCK_PICTURE):
+        assert A2345.verification(capability) == Verification.VERIFIED
+    for capability in (Capability.OWN_CLOCK_PICTURES, Capability.UFCS):
+        assert A2345.verification(capability) == Verification.EXPERIMENTAL
     assert A2345.supports(Capability.OUTPUT_SCHEDULE)
     assert A2687.supports(Capability.SCREEN_PICTURE)
     assert not A2345.supports(Capability.SCREEN_ORIENTATION)
