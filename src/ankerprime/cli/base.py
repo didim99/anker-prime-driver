@@ -8,9 +8,12 @@ import contextlib
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, TextIO
 
 from ankerprime.api.cloud import CLOUD_PRODUCTS, CloudAccount
+from ankerprime.cli.aliases import (
+    ChargerAlias, Connection, parse_alias_name, parse_country)
 from ankerprime.cli.config import CliConfig
 from ankerprime.cli.style import PLAIN, Painter
 from ankerprime.cloud.auth import Authentication
@@ -128,6 +131,53 @@ class CliContext:
                 await account.close()
                 await self._save_new_authentication()
 
+    async def target(self, args: argparse.Namespace) -> ChargerTarget:
+        """The charger the selection options name, else the default one.
+
+        Without any of them and without a default, the account's only cloud
+        charger is used.
+        """
+
+        if args.ble is not None:
+            return ChargerTarget(Connection.BLUETOOTH, address=args.ble.upper(),
+                                 owner_id=args.owner_id, country=args.country)
+        if args.serial is not None:
+            return ChargerTarget(Connection.CLOUD, serial=args.serial)
+        aliases = await self._config.aliases()
+        alias = aliases.get(args.charger) if args.charger else aliases.default
+        if alias is None:
+            return ChargerTarget(Connection.CLOUD)
+        return ChargerTarget(alias.connection, serial=alias.serial,
+                             address=alias.address,
+                             owner_id=args.owner_id or alias.owner_id,
+                             country=args.country or alias.country,
+                             alias=alias)
+
+    def connect(self, target: ChargerTarget, timeout: float, *,
+                save_energy: bool = False
+                ) -> AbstractAsyncContextManager[Charger]:
+        """A connected charger whose full state has arrived."""
+
+        if target.connection == Connection.BLUETOOTH:
+            return self.bluetooth_charger(
+                target.address or '', owner_id=target.owner_id,
+                country=target.country, timeout=timeout,
+                save_energy=save_energy)
+        return self.charger(target.serial, timeout, save_energy=save_energy)
+
+    async def learn_serial(self, target: ChargerTarget,
+                           charger: Charger) -> None:
+        """Keep the serial a Bluetooth alias did not know yet."""
+
+        alias = target.alias
+        serial = charger.state.info.serial
+        if (alias is None or serial is None or alias.serial == serial
+                or alias.connection != Connection.BLUETOOTH):
+            return
+        aliases = await self._config.aliases()
+        aliases.put(alias.with_serial(serial))
+        await self._config.save_aliases(aliases)
+
     @asynccontextmanager
     async def charger(self, serial: str | None, timeout: float, *,
                       save_energy: bool = False) -> AsyncIterator[Charger]:
@@ -197,6 +247,53 @@ class CliContext:
             self._new_authentication = None
 
 
+@dataclass(init=False)
+class ChargerTarget:
+    """How to reach the charger a command works on."""
+
+    _connection: Connection
+    _serial: str | None
+    _address: str | None
+    _owner_id: str | None
+    _country: str | None
+    _alias: ChargerAlias | None
+
+    def __init__(self, connection: Connection, *, serial: str | None = None,
+                 address: str | None = None, owner_id: str | None = None,
+                 country: str | None = None,
+                 alias: ChargerAlias | None = None):
+        self._connection = connection
+        self._serial = serial
+        self._address = address
+        self._owner_id = owner_id
+        self._country = country
+        self._alias = alias
+
+    @property
+    def connection(self) -> Connection:
+        return self._connection
+
+    @property
+    def serial(self) -> str | None:
+        return self._serial
+
+    @property
+    def address(self) -> str | None:
+        return self._address
+
+    @property
+    def owner_id(self) -> str | None:
+        return self._owner_id
+
+    @property
+    def country(self) -> str | None:
+        return self._country
+
+    @property
+    def alias(self) -> ChargerAlias | None:
+        return self._alias
+
+
 class Command(ABC):
     """One sub-command."""
 
@@ -223,19 +320,18 @@ class ChargerCommand(Command):
 
     async def run(self, context: CliContext,
                   args: argparse.Namespace) -> int:
-        connection: AbstractAsyncContextManager[Charger]
-        if args.ble is not None:
-            connection = context.bluetooth_charger(
-                args.ble, owner_id=args.owner_id, country=args.country,
-                timeout=args.timeout, save_energy=self.SAVES_ENERGY)
-        else:
-            connection = context.charger(args.serial, args.timeout,
-                                         save_energy=self.SAVES_ENERGY)
-        async with connection as charger:
+        target = await context.target(args)
+        async with context.connect(target, args.timeout,
+                                   save_energy=self.SAVES_ENERGY) as charger:
+            await context.learn_serial(target, charger)
             return await self.run_charger(context, charger, args)
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         selection = parser.add_mutually_exclusive_group()
+        selection.add_argument('-c', '--charger', type=parse_alias_name,
+                               metavar='NAME',
+                               help='charger saved with "charger add" '
+                                    '(default: the default charger)')
         selection.add_argument('--serial',
                                help='cloud charger serial; needed with '
                                     'several chargers')
@@ -245,7 +341,7 @@ class ChargerCommand(Command):
         parser.add_argument('--owner-id',
                             help='Anker account ID the 160W is bound to '
                                  '(default: the signed-in account)')
-        parser.add_argument('--country',
+        parser.add_argument('--country', type=parse_country,
                             help='account country code for the 160W '
                                  '(default: the signed-in account\'s, '
                                  f'else {DEFAULT_COUNTRY})')

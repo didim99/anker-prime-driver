@@ -90,7 +90,28 @@ pass it with `--owner-id`. Without it such a charger refuses the session
 (default: the signed-in account's, else `US`). The tool keeps its own random
 Bluetooth identity in `bluetooth.json` in the config folder.
 
-With several chargers on the account, pick one with `--serial`. Run
+### Saved chargers
+
+Name chargers once instead of typing serials and addresses:
+
+```bash
+ankerprime charger add desk --serial A2345XXXXXXXXXX --default
+ankerprime charger add lamp --ble AA:BB:CC:DD:EE:FF --owner-id <id> --country DE
+ankerprime charger list                # * marks the default
+ankerprime status -c lamp              # or --charger lamp
+ankerprime monitor                     # uses the default charger
+ankerprime charger default lamp        # or --clear
+ankerprime charger remove lamp
+```
+
+Commands without `-c`, `--serial` or `--ble` use the default charger; without a
+default they use the account's only cloud charger. `--owner-id` and `--country`
+on a command override the saved ones. A Bluetooth charger's serial is recorded
+on its first connection, after which `energy-reset -c NAME` works offline.
+The names are kept in `chargers.json` in the config folder.
+
+With several chargers on the account, pick one with `-c`, `--serial` or a
+default charger. Run
 `ankerprime --help` or `ankerprime <command> --help` for every option.
 Commands marked experimental print a note: they follow the protocol but are
 not confirmed on a real charger yet.

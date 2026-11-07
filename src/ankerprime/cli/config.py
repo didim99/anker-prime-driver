@@ -1,4 +1,4 @@
-"""Owner-only JSON files in a config folder: login, energy, Bluetooth identity.
+"""Owner-only JSON files in a config folder: login, chargers, energy.
 
 The folder is ``$ANKERPRIME_CONFIG_DIR`` when set, otherwise
 ``%APPDATA%\\ankerprime`` on Windows and ``$XDG_CONFIG_HOME/ankerprime``
@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 
+from ankerprime.cli.aliases import ChargerAliases
 from ankerprime.cloud.auth import AccountCredentials, Authentication
 from ankerprime.interfaces.storage import DocumentStore, JsonDocument
 from ankerprime.protocol.a2687.handshake import new_client_id
@@ -20,6 +21,7 @@ APP_DIRECTORY = 'ankerprime'
 CREDENTIALS_KEY = 'credentials'
 AUTHENTICATION_KEY = 'authentication'
 BLUETOOTH_KEY = 'bluetooth'
+CHARGERS_KEY = 'chargers'
 CLIENT_ID_FIELD = 'client_id'
 
 
@@ -89,6 +91,13 @@ class CliConfig:
         await self._store.save(BLUETOOTH_KEY, {**document,
                                                CLIENT_ID_FIELD: client_id})
         return client_id
+
+    async def aliases(self) -> ChargerAliases:
+        return ChargerAliases.from_document(
+            await self._store.load(CHARGERS_KEY))
+
+    async def save_aliases(self, aliases: ChargerAliases) -> None:
+        await self._store.save(CHARGERS_KEY, aliases.to_document())
 
     async def save_login(self, authentication: Authentication,
                          credentials: AccountCredentials | None) -> None:

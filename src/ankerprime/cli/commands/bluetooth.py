@@ -35,7 +35,9 @@ class ScanCommand(Command):
                 for charger in chargers]
         context.print(render_table(('Address', 'Name', 'Signal', 'Match'),
                                    rows, painter=painter))
-        context.print(painter.dim('Use one with --ble ADDRESS.'))
+        context.print(painter.dim('Use one with --ble ADDRESS, or name it: '
+                                  'ankerprime charger add NAME --ble '
+                                  'ADDRESS'))
         return 0
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:

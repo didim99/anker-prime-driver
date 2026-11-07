@@ -2,18 +2,21 @@
 
 import argparse
 
+from ankerprime.cli.aliases import parse_alias_name
 from ankerprime.cli.base import Command, CliContext, select_device
 from ankerprime.cli.parsing import parse_port
 from ankerprime.energy.store import EnergyStore
 from ankerprime.model.enums import PortId
+from ankerprime.model.errors import InvalidParameterError
 from ankerprime.utils import utc_now
 
 
 class EnergyResetCommand(Command):
     """Zeroes stored counters; a running ``monitor`` follows the reset.
 
-    With ``--serial`` it works offline; otherwise the account picks the only
-    cloud charger.
+    With ``--serial`` or a saved charger (``-c`` or the default one) it works
+    offline; otherwise the account picks the only cloud charger. A saved
+    Bluetooth charger needs one connection first, which records its serial.
     """
 
     NAME = 'energy-reset'
@@ -22,6 +25,8 @@ class EnergyResetCommand(Command):
     async def run(self, context: CliContext,
                   args: argparse.Namespace) -> int:
         serial = args.serial
+        if serial is None:
+            serial = await _alias_serial(context, args.charger)
         if serial is None:
             async with context.account() as account:
                 devices = await account.bound_devices()
@@ -46,6 +51,25 @@ class EnergyResetCommand(Command):
         parser.add_argument('ports', nargs='*', type=parse_port,
                             metavar='port',
                             help='c1-c4, a1, a2 (default: all)')
-        parser.add_argument('--serial',
-                            help='charger serial; needed with several '
-                                 'chargers, works offline')
+        selection = parser.add_mutually_exclusive_group()
+        selection.add_argument('-c', '--charger', type=parse_alias_name,
+                               metavar='NAME',
+                               help='charger saved with "charger add" '
+                                    '(default: the default charger)')
+        selection.add_argument('--serial',
+                               help='charger serial; needed with several '
+                                    'chargers, works offline')
+
+
+async def _alias_serial(context: CliContext, name: str | None) -> str | None:
+    """Serial of the named or default charger; None without either."""
+
+    aliases = await context.config.aliases()
+    alias = aliases.get(name) if name is not None else aliases.default
+    if alias is None:
+        return None
+    if alias.serial is None:
+        raise InvalidParameterError(
+            f'serial of charger {alias.name} not known yet; connect to it '
+            f'once (e.g. "ankerprime status -c {alias.name}")')
+    return alias.serial
