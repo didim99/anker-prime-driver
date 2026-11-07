@@ -1,31 +1,23 @@
 """FF09 frame codec of the A2345.
 
-Frame layout::
+Payload layout, inside the shared envelope (``ankerprime.protocol.ff09``)::
 
-    FF 09                 marker
-    uint16 LE length      whole frame including the checksum
-    version speaker group three-byte pattern, version is always 3
-    uint16 BE type        message type
     [increment]           present when the next byte is below A0
     TLVs                  tag | uint8 length | value
-    checksum              XOR of all previous bytes
 
 Decoding is strict: malformed frames are rejected, never repaired.
 """
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
-from functools import reduce
 
 from ankerprime.model.errors import ProtocolError
+from ankerprime.protocol import ff09
+from ankerprime.protocol.ff09 import (
+    HEADER, PAYLOAD_OFFSET, PROTOCOL_VERSION, FrameError,
+    FrameErrorKind, seal_frame, validate_envelope)
 from ankerprime.utils import u32le
 
-
-HEADER = b'\xff\x09'
-PROTOCOL_VERSION = 0x03
-MIN_FRAME_LENGTH = 10
-MAX_FRAME_LENGTH = 2048
 
 REQUEST_SPEAKER = 0x00
 REQUEST_GROUP = 0x0F
@@ -41,33 +33,6 @@ VALUE_TYPE_U32 = 0x03
 VALUE_TYPE_BYTES = 0x04
 VALUE_TYPES_BY_LENGTH = {1: VALUE_TYPE_U8, 2: VALUE_TYPE_U16, 4: VALUE_TYPE_U32}
 LONG_FIELD_THRESHOLD = 0x78
-
-
-class FrameErrorKind(StrEnum):
-    """Reason a frame was rejected."""
-
-    TOO_SHORT = 'too_short'
-    TOO_LARGE = 'too_large'
-    BAD_HEADER = 'bad_header'
-    INVALID_LENGTH = 'invalid_length'
-    LENGTH_MISMATCH = 'length_mismatch'
-    UNSUPPORTED_VERSION = 'unsupported_version'
-    BAD_CHECKSUM = 'bad_checksum'
-    TRUNCATED_FIELD = 'truncated_field'
-
-
-class FrameError(ProtocolError):
-    """A byte sequence is not a valid FF09 frame."""
-
-    _kind: FrameErrorKind
-
-    def __init__(self, kind: FrameErrorKind, detail: str):
-        super().__init__(f'invalid FF09 frame ({kind}): {detail}')
-        self._kind = kind
-
-    @property
-    def kind(self) -> FrameErrorKind:
-        return self._kind
 
 
 class Message:
@@ -162,146 +127,19 @@ class Frame:
         return None
 
 
-class FrameReassembler:
-    """Splits a byte stream of split or coalesced chunks into valid frames.
-
-    Garbage and malformed candidates are dropped and counted; a plausible but
-    corrupt length never stalls the stream once a later complete frame
-    validates.
-    """
-
-    _buffer: bytearray
-
-    _dropped_bytes: int
-    _rejected_frames: int
-    _last_rejection: FrameError | None
+class FrameReassembler(ff09.FrameReassembler[Frame]):
+    """Reassembler producing A2345 frames."""
 
     def __init__(self) -> None:
-        self._buffer = bytearray()
-        self._dropped_bytes = 0
-        self._rejected_frames = 0
-        self._last_rejection = None
-
-    @property
-    def dropped_bytes(self) -> int:
-        return self._dropped_bytes
-
-    @property
-    def rejected_frames(self) -> int:
-        return self._rejected_frames
-
-    @property
-    def last_rejection(self) -> FrameError | None:
-        return self._last_rejection
-
-    def reset(self) -> None:
-        """Discard buffered bytes; counters are kept."""
-
-        self._buffer.clear()
-
-    def feed(self, chunk: bytes) -> list[Frame]:
-        """Append a chunk and return every frame it completes."""
-
-        self._buffer += chunk
-        frames = []
-        while True:
-            offset = self._next_header_offset(0)
-            if offset is None:
-                self._keep_possible_header_prefix()
-                break
-            self._drop(offset)
-            if len(self._buffer) < 4:
-                break
-
-            length = int.from_bytes(self._buffer[2:4], 'little')
-            if not MIN_FRAME_LENGTH <= length <= MAX_FRAME_LENGTH:
-                self._reject(FrameError(FrameErrorKind.INVALID_LENGTH,
-                                        f'declared length {length}'))
-                continue
-
-            if len(self._buffer) < length:
-                # A false length must not wait forever for bytes that belong
-                # to a later frame; resync only on a fully valid later frame.
-                recovery = self._next_valid_frame_offset(2)
-                if recovery is None:
-                    break
-                error = FrameError(FrameErrorKind.LENGTH_MISMATCH,
-                                   f'declared {length}, got {recovery}')
-                self._reject(error, recovery)
-                continue
-
-            try:
-                frames.append(decode_frame(bytes(self._buffer[:length])))
-            except FrameError as error:
-                # Drop only the marker: a corrupt length may span a valid frame.
-                self._reject(error)
-                continue
-            del self._buffer[:length]
-        return frames
-
-    def _next_header_offset(self, start: int) -> int | None:
-        offset = self._buffer.find(HEADER, start)
-        return offset if offset >= 0 else None
-
-    def _next_valid_frame_offset(self, start: int) -> int | None:
-        offset = self._next_header_offset(start)
-        while offset is not None:
-            header = self._buffer[offset + 2:offset + 4]
-            length = int.from_bytes(header, 'little')
-            end = offset + length
-            if (offset + 4 <= len(self._buffer)
-                    and MIN_FRAME_LENGTH <= length <= MAX_FRAME_LENGTH
-                    and end <= len(self._buffer)
-                    and _is_valid_frame(bytes(self._buffer[offset:end]))):
-                return offset
-            offset = self._next_header_offset(offset + 1)
-        return None
-
-    def _keep_possible_header_prefix(self) -> None:
-        keep = 1 if self._buffer.endswith(HEADER[:1]) else 0
-        self._drop(len(self._buffer) - keep)
-
-    def _reject(self, error: FrameError, skip: int = len(HEADER)) -> None:
-        self._rejected_frames += 1
-        self._last_rejection = error
-        self._drop(skip)
-
-    def _drop(self, count: int) -> None:
-        self._dropped_bytes += count
-        del self._buffer[:count]
-
-
-def checksum(data: Iterable[int]) -> int:
-    """XOR of all bytes."""
-
-    return reduce(lambda acc, byte: acc ^ byte, data, 0)
+        super().__init__(decode_frame)
 
 
 def decode_frame(data: bytes) -> Frame:
     """Decode one complete frame; raises ``FrameError`` on any defect."""
 
-    if len(data) < MIN_FRAME_LENGTH:
-        raise FrameError(FrameErrorKind.TOO_SHORT, f'{len(data)} bytes')
-    if len(data) > MAX_FRAME_LENGTH:
-        raise FrameError(FrameErrorKind.TOO_LARGE, f'{len(data)} bytes')
-    if data[:2] != HEADER:
-        raise FrameError(FrameErrorKind.BAD_HEADER, data[:2].hex())
-
-    length = int.from_bytes(data[2:4], 'little')
-    if not MIN_FRAME_LENGTH <= length <= MAX_FRAME_LENGTH:
-        raise FrameError(FrameErrorKind.INVALID_LENGTH, f'declared {length}')
-    if length != len(data):
-        raise FrameError(FrameErrorKind.LENGTH_MISMATCH,
-                         f'declared {length}, got {len(data)}')
-    if data[4] != PROTOCOL_VERSION:
-        raise FrameError(FrameErrorKind.UNSUPPORTED_VERSION, f'{data[4]}')
-    computed = checksum(data[:-1])
-    if computed != data[-1]:
-        raise FrameError(FrameErrorKind.BAD_CHECKSUM,
-                         f'encoded {data[-1]:#04x}, computed {computed:#04x}')
-
+    validate_envelope(data)
     end = len(data) - 1
-    offset = 9
+    offset = PAYLOAD_OFFSET
     increment = None
     if offset < end and data[offset] < MIN_TAG:
         increment = data[offset]
@@ -317,7 +155,7 @@ def decode_frame(data: bytes) -> Frame:
 
     return Frame(version=data[4], speaker=data[5], group=data[6],
                  message_type=int.from_bytes(data[7:9], 'big'),
-                 increment=increment, fields=fields, length=length)
+                 increment=increment, fields=fields, length=len(data))
 
 
 def encode_request(message_type: int, fields: Mapping[int, bytes], *,
@@ -348,17 +186,7 @@ def encode_request(message_type: int, fields: Mapping[int, bytes], *,
         body += value
     body += bytes((TAG_TIMESTAMP, 5, VALUE_TYPE_U32))
     body += u32le(timestamp)
-    body[2:4] = (len(body) + 1).to_bytes(2, 'little')
-    body.append(checksum(body))
-    return bytes(body)
-
-
-def _is_valid_frame(data: bytes) -> bool:
-    try:
-        decode_frame(data)
-    except FrameError:
-        return False
-    return True
+    return seal_frame(body)
 
 
 def _value_type(length: int) -> int:

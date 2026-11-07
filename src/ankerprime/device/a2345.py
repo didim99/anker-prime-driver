@@ -40,7 +40,7 @@ from ankerprime.model.state import ClockSchedule, DeviceInfo, Schedule
 from ankerprime.protocol.a2345 import commands
 from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
-    KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES, decode_value, encode_value)
+    KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES)
 from ankerprime.protocol.a2345.commands import Command
 from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import (
@@ -51,6 +51,7 @@ from ankerprime.protocol.a2345.settings import (
     PriorityUpdate, ScheduleUpdate, SettingField, SettingsChange,
     SettingsUpdate, ValueUpdate, WriteAcknowledgement)
 from ankerprime.protocol.a2345.tracker import StateTracker
+from ankerprime.protocol.codes import decode_value, encode_value
 from ankerprime.utils import Clock, redact, utc_now
 
 

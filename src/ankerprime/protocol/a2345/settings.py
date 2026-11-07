@@ -13,8 +13,9 @@ from types import MappingProxyType
 
 from ankerprime.model.enums import OutputId, ScheduleSlot
 from ankerprime.protocol.a2345.codes import (
-    GROUPS, SCHEDULE_SLOT_CODES, USB_C_GROUPS, decode_value, output_of_group)
+    GROUPS, SCHEDULE_SLOT_CODES, USB_C_GROUPS, output_of_group)
 from ankerprime.protocol.a2345.frame import Frame, Message
+from ankerprime.protocol.codes import decode_value
 
 
 MSG_STATUS_SNAPSHOT = 0x0A00

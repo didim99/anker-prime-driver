@@ -2,7 +2,6 @@
 
 from collections.abc import Mapping
 from datetime import datetime
-from typing import TypeVar
 
 from ankerprime.model.capabilities import Capability, Verification
 from ankerprime.model.enums import OutputId, PortId, Weekday
@@ -14,7 +13,7 @@ from ankerprime.model.state import (
 from ankerprime.protocol.a2345.codes import (
     CABLE_RATINGS, CHARGING_MODE_CODES, CHARGING_PROTOCOLS,
     CLOCK_THEME_CODES, DEVICE_BRANDS, HOUR_FORMAT_CODES,
-    KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES, decode_value)
+    KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES)
 from ankerprime.protocol.a2345.frame import Message
 from ankerprime.protocol.a2345.messages import (
     RawPortReading, RealtimeTelemetry, StatusSnapshot, VersionInfo)
@@ -22,9 +21,8 @@ from ankerprime.protocol.a2345.settings import (
     PRIORITY_OFF, PRIORITY_PREFERRED, Capabilities, ClockState,
     ClockWindow, CountdownUpdate, DeviceSettings, OutputControl,
     OutputSwitchUpdate, PortSchedule, SettingsChange)
+from ankerprime.protocol.codes import decode_value, lookup
 
-
-ValueT = TypeVar('ValueT')
 
 # Firmware feature bits that gate model capabilities.
 GATED_CAPABILITIES = {
@@ -153,9 +151,9 @@ class StateTracker:
             for slot in self._settings.usb_identities:
                 if slot.output == output and not slot.empty:
                     vendor_id, product_id = slot.first, slot.second
-        cable = _lookup(CABLE_RATINGS, raw.cable)
-        protocol = _lookup(CHARGING_PROTOCOLS, raw.fast_charge)
-        brand = _lookup(DEVICE_BRANDS, raw.device_brand)
+        cable = lookup(CABLE_RATINGS, raw.cable)
+        protocol = lookup(CHARGING_PROTOCOLS, raw.fast_charge)
+        brand = lookup(DEVICE_BRANDS, raw.device_brand)
         return PortReading(port, status_code=raw.status, voltage=raw.voltage,
                            current=raw.current, power=raw.power, cable=cable,
                            charging_protocol=protocol, device_brand=brand,
@@ -199,10 +197,6 @@ class StateTracker:
                                ufcs=settings.ufcs,
                                updating_firmware=settings.updating_firmware,
                                display=display, clock=clock)
-
-
-def _lookup(table: Mapping[int, ValueT], code: int | None) -> ValueT | None:
-    return table.get(code) if code is not None else None
 
 
 def _schedule(slot: PortSchedule) -> Schedule | None:

@@ -7,9 +7,10 @@ from ankerprime.model.enums import (
     HourFormat, KnobDirection, OutputId, PortId, ProductCode,
     ScheduleSlot, ScreenOrientation, ScreenTimeout, Weekday)
 from ankerprime.model.errors import (
-    AnkerPrimeError, AuthenticationError, ChargerConnectionError,
-    ChargerTimeoutError, InvalidParameterError, ProtocolError,
-    UnknownProductError, UnsupportedCapabilityError, WriteRejectedError)
+    AccountRefusedError, AnkerPrimeError, AuthenticationError,
+    ChargerConnectionError, ChargerTimeoutError,
+    InvalidParameterError, ProtocolError, UnknownProductError,
+    UnsupportedCapabilityError, WriteRejectedError)
 from ankerprime.model.product import (
     A2345, A2687, PRODUCTS, OutputSpec,
     PortSpec, Product, ValueRange, get_product)
@@ -22,6 +23,7 @@ __all__ = [
     'A2345',
     'A2687',
     'PRODUCTS',
+    'AccountRefusedError',
     'AnkerPrimeError',
     'AuthenticationError',
     'CableRating',

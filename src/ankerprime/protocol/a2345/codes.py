@@ -1,16 +1,10 @@
 """Wire codes of the A2345 for the shared model enums."""
 
-from collections.abc import Mapping
-from enum import Enum
-from typing import TypeVar
-
 from ankerprime.model.enums import (
     CableRating, ChargingMode, ChargingProtocol, ClockTheme, DeviceBrand,
     HourFormat, KnobDirection, OutputId, ScheduleSlot, ScreenTimeout)
 from ankerprime.model.errors import InvalidParameterError
 
-
-EnumT = TypeVar('EnumT', bound=Enum)
 
 # Wire order of the port groups: the index is the group code.
 GROUPS = (OutputId.C1, OutputId.C2, OutputId.C3, OutputId.C4, OutputId.USB_A)
@@ -69,20 +63,3 @@ def output_of_group(code: int | None) -> OutputId | None:
     if code is None or not 0 <= code < len(GROUPS):
         return None
     return GROUPS[code]
-
-
-def encode_value(codes: Mapping[EnumT, int], value: EnumT) -> int:
-    """Return the wire code of a value; raises when the A2345 lacks it."""
-
-    if value not in codes:
-        raise InvalidParameterError(f'A2345 does not support {value}')
-    return codes[value]
-
-
-def decode_value(codes: Mapping[EnumT, int], code: int | None) -> EnumT | None:
-    """Return the value of a wire code, None for unknown codes."""
-
-    for value, value_code in codes.items():
-        if value_code == code:
-            return value
-    return None

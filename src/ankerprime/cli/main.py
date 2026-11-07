@@ -12,14 +12,16 @@ from typing import TextIO
 import aiohttp
 
 from ankerprime import __version__
-from ankerprime.cli.base import CliContext, Command, HttpFactory
+from ankerprime.cli.base import (
+    BleScanner, BleTransportFactory, CliContext, Command, HttpFactory)
 from ankerprime.cli.commands import COMMANDS
 from ankerprime.cli.config import CliConfig, default_config_dir
 from ankerprime.cli.style import ColorMode, Painter, ansi_terminal, use_color
 from ankerprime.cloud.http import AiohttpClient
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.mqtt import MqttConnector
-from ankerprime.model.errors import AnkerPrimeError, AuthenticationError
+from ankerprime.model.errors import (
+    AccountRefusedError, AnkerPrimeError, AuthenticationError)
 from ankerprime.transport.cloud import TlsFactory
 
 
@@ -58,10 +60,12 @@ def main(argv: list[str] | None = None, *,
          http_factory: HttpFactory | None = None,
          connector: MqttConnector | None = None,
          tls_factory: TlsFactory | None = None,
+         ble_transport: BleTransportFactory | None = None,
+         ble_scanner: BleScanner | None = None,
          out: TextIO | None = None) -> int:
     """Run the command-line interface and return the process exit code.
 
-    The keyword arguments replace the network for tests.
+    The keyword arguments replace the network and Bluetooth for tests.
     """
 
     parser = build_parser()
@@ -76,6 +80,7 @@ def main(argv: list[str] | None = None, *,
     ansi = ansi_terminal(output)
     context = CliContext(config, http_factory or aiohttp_client, output,
                          connector=connector, tls_factory=tls_factory,
+                         ble_transport=ble_transport, ble_scanner=ble_scanner,
                          painter=Painter(use_color(args.color, output)),
                          ansi=ansi)
     try:
@@ -86,8 +91,11 @@ def main(argv: list[str] | None = None, *,
         return EXIT_INTERRUPTED
     except AuthenticationError as error:
         print(f'{errors.bad("error:")} {error}', file=sys.stderr)
-        print(errors.warn('hint: run "ankerprime login" again'),
-              file=sys.stderr)
+        hint = 'run "ankerprime login" again'
+        if isinstance(error, AccountRefusedError):
+            hint = ('pass --owner-id with the Anker account ID the charger '
+                    'is bound to')
+        print(errors.warn(f'hint: {hint}'), file=sys.stderr)
         return EXIT_AUTHENTICATION
     except AnkerPrimeError as error:
         print(f'{errors.bad("error:")} {error}', file=sys.stderr)

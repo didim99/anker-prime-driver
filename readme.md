@@ -3,7 +3,8 @@
 Python library to monitor and control Anker Prime chargers.
 
 > **Status: pre-alpha, under development.** The 250W cloud connection, energy
-> counters and the command-line tool work; the 160W is not done yet.
+> counters and the command-line tool work. 160W (Bluetooth) support is
+> implemented but untested on a real charger.
 
 This is an unofficial project, not affiliated with or endorsed by Anker.
 
@@ -68,6 +69,26 @@ reset within a minute.
 Output is colored on terminals; `--color never|always` overrides that, and
 the `NO_COLOR` / `FORCE_COLOR` environment variables are honored. JSON output
 is never colored.
+
+### 160W over Bluetooth
+
+Needs the `ble` extra and a Bluetooth adapter. The charger accepts one
+connection at a time, so close the Anker app on your phone first.
+
+```bash
+ankerprime scan                                  # chargers nearby
+ankerprime status --ble AA:BB:CC:DD:EE:FF
+ankerprime monitor --ble AA:BB:CC:DD:EE:FF
+ankerprime output c2 off --ble AA:BB:CC:DD:EE:FF
+ankerprime display --ble AA:BB:CC:DD:EE:FF --orientation left --language de
+```
+
+Newer firmware only talks to the Anker account the charger is bound to. When
+you are signed in (`ankerprime login`), that account's ID is used; otherwise
+pass it with `--owner-id`. Without it such a charger refuses the session
+(exit code 3). `--country` sets the account country sent to the charger
+(default: the signed-in account's, else `US`). The tool keeps its own random
+Bluetooth identity in `bluetooth.json` in the config folder.
 
 With several chargers on the account, pick one with `--serial`. Run
 `ankerprime --help` or `ankerprime <command> --help` for every option.

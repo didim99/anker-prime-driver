@@ -15,8 +15,8 @@ from typing import Any
 
 from ankerprime.cloud.client import BoundDevice, MqttCredentials
 from ankerprime.model.errors import InvalidParameterError, ProtocolError
-from ankerprime.protocol.a2345.frame import (
-    HEADER, MAX_FRAME_LENGTH, FrameError, decode_frame)
+from ankerprime.protocol.a2345.frame import decode_frame
+from ankerprime.protocol.ff09 import HEADER, MAX_FRAME_LENGTH, FrameError
 
 
 MAX_INPUT_BYTES = 256 * 1024

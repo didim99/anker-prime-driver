@@ -66,6 +66,19 @@ class EnergyRecorder:
     def counters(self) -> Mapping[PortId, float]:
         return self._meter.counters
 
+    @property
+    def has_store(self) -> bool:
+        return self._store is not None
+
+    def attach(self, store: EnergyStore) -> None:
+        """Use a store found later, e.g. once the charger's serial is known.
+
+        Counted energy is kept; ``load`` then continues from the store.
+        """
+
+        if self._store is None:
+            self._store = store
+
     def record(self, at: float, powers: Mapping[PortId, float]) -> bool:
         """Add a power sample; return whether the counters grew."""
 

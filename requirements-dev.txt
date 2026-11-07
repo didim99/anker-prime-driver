@@ -1,4 +1,6 @@
 amqtt~=0.12.1
+bleak~=2.0.0
+bleak-retry-connector~=4.4.3
 build~=1.6.1
 mypy~=2.4.1
 pytest~=9.2.0

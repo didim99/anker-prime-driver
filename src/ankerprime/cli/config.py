@@ -1,4 +1,4 @@
-"""Owner-only JSON files in a config folder: the CLI login and energy counters.
+"""Owner-only JSON files in a config folder: login, energy, Bluetooth identity.
 
 The folder is ``$ANKERPRIME_CONFIG_DIR`` when set, otherwise
 ``%APPDATA%\\ankerprime`` on Windows and ``$XDG_CONFIG_HOME/ankerprime``
@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ankerprime.cloud.auth import AccountCredentials, Authentication
 from ankerprime.interfaces.storage import DocumentStore, JsonDocument
+from ankerprime.protocol.a2687.handshake import new_client_id
 from ankerprime.storage.json_store import JsonFileStore
 
 
@@ -18,6 +19,8 @@ CONFIG_DIR_VARIABLE = 'ANKERPRIME_CONFIG_DIR'
 APP_DIRECTORY = 'ankerprime'
 CREDENTIALS_KEY = 'credentials'
 AUTHENTICATION_KEY = 'authentication'
+BLUETOOTH_KEY = 'bluetooth'
+CLIENT_ID_FIELD = 'client_id'
 
 
 class ReadOnlyStore(DocumentStore):
@@ -74,6 +77,18 @@ class CliConfig:
         if document is None:
             return None
         return Authentication.from_document(document)
+
+    async def client_id(self) -> str:
+        """Bluetooth user identity of this installation, created once."""
+
+        document = await self._store.load(BLUETOOTH_KEY) or {}
+        client_id = document.get(CLIENT_ID_FIELD)
+        if isinstance(client_id, str) and client_id:
+            return client_id
+        client_id = new_client_id()
+        await self._store.save(BLUETOOTH_KEY, {**document,
+                                               CLIENT_ID_FIELD: client_id})
+        return client_id
 
     async def save_login(self, authentication: Authentication,
                          credentials: AccountCredentials | None) -> None:

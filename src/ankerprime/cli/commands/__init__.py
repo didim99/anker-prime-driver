@@ -3,6 +3,7 @@
 from ankerprime.cli.base import Command
 from ankerprime.cli.commands.account import (
     DevicesCommand, LoginCommand, LogoutCommand, RegionsCommand)
+from ankerprime.cli.commands.bluetooth import ScanCommand
 from ankerprime.cli.commands.control import (
     AllocationCommand, ClockCommand, ClockScheduleCommand,
     CountdownCommand, DisplayCommand, HolidayCommand, ModeCommand,
@@ -27,6 +28,7 @@ COMMANDS: dict[str, type[Command]] = {
     'output': OutputCommand,
     'priority': PriorityCommand,
     'regions': RegionsCommand,
+    'scan': ScanCommand,
     'schedule': ScheduleCommand,
     'status': StatusCommand,
     'switch': SwitchCommand,

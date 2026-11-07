@@ -11,6 +11,14 @@ class AuthenticationError(AnkerPrimeError):
     """Credentials or token were rejected; user action is required."""
 
 
+class AccountRefusedError(AuthenticationError):
+    """A Bluetooth charger refused the user identity and sends no data.
+
+    The charger is bound to an Anker account; its ID is needed as
+    the owner ID.
+    """
+
+
 class ChargerConnectionError(AnkerPrimeError):
     """The charger or the cloud service cannot be reached."""
 

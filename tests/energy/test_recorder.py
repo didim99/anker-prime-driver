@@ -45,6 +45,23 @@ async def test_without_store_nothing_is_saved() -> None:
     assert target.counters[PortId.C1] == pytest.approx(2.0)
 
 
+async def test_store_attached_later_continues_from_it() -> None:
+    documents = MemoryStore()
+    await EnergyStore(documents, 'key').save(
+        EnergyRecord({PortId.C1: 5.0}), NOW)
+    target = EnergyRecorder(PORTS)
+    count(target, 0.0, 2)
+    assert not target.has_store
+    target.attach(EnergyStore(documents, 'key'))
+    target.attach(EnergyStore(documents, 'other'))
+    assert target.has_store
+    assert await target.load()
+    assert target.counters[PortId.C1] == pytest.approx(5.0)
+    count(target, 10.0, 1)
+    await target.save(20.0, NOW)
+    assert (await stored(documents)).counters[PortId.C1] == pytest.approx(6.0)
+
+
 async def test_load_save_and_save_interval() -> None:
     documents = MemoryStore()
     await EnergyStore(documents, 'key').save(

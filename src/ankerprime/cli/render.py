@@ -215,7 +215,10 @@ def _settings(state: ChargerState, painter: Painter) -> str:
     mode = enum_value(settings.charging_mode)
     if mode is None and settings.charging_mode_code is not None:
         mode = f'code {settings.charging_mode_code}'
-    lines.append(_line(painter, 'Mode', [painter.strong(mode or UNKNOWN)]))
+    mode_parts = [painter.strong(mode or UNKNOWN)]
+    if settings.fixed_allocation is not None:
+        mode_parts.append(f'allocation {settings.fixed_allocation.value}')
+    lines.append(_line(painter, 'Mode', mode_parts))
     display_parts = [
         f'brightness {_number(display.brightness, "%")}',
         f'timeout {enum_value(display.screen_timeout) or UNKNOWN}',

@@ -3,8 +3,9 @@
 import pytest
 
 from ankerprime.protocol.a2345.frame import (
-    MAX_FRAME_LENGTH, Frame, FrameError, FrameErrorKind,
-    FrameReassembler, Tlv, checksum, decode_frame, encode_request)
+    Frame, FrameReassembler, Tlv, decode_frame, encode_request)
+from ankerprime.protocol.ff09 import (
+    MAX_FRAME_LENGTH, FrameError, FrameErrorKind, checksum)
 from tests.protocol.a2345.fixtures import (
     REALTIME_ACKNOWLEDGEMENT, REALTIME_NEW_FIRMWARE,
     REALTIME_OLD_FIRMWARE, REALTIME_TRIGGER_REQUEST,

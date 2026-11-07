@@ -5,8 +5,8 @@ from collections.abc import Callable
 
 from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.model.errors import ChargerConnectionError
-from ankerprime.protocol.a2345.frame import (
-    HEADER, Frame, checksum, decode_frame)
+from ankerprime.protocol.a2345.frame import Frame, decode_frame
+from ankerprime.protocol.ff09 import HEADER, checksum
 from tests.protocol.a2345.fixtures import REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT
 
 
