@@ -19,9 +19,9 @@ from ankerprime.protocol.a2345.frame import Message
 from ankerprime.protocol.a2345.messages import (
     RawPortReading, RealtimeTelemetry, StatusSnapshot, VersionInfo)
 from ankerprime.protocol.a2345.settings import (
-    PRIORITY_OFF, PRIORITY_PREFERRED, Capabilities, ClockState,
-    ClockWindow, CountdownUpdate, DeviceSettings, OutputControl,
-    OutputSwitchUpdate, PortSchedule, SettingsChange)
+    PRIORITY_OFF, PRIORITY_PREFERRED, THEME_PICTURE_CODES, Capabilities,
+    ClockState, ClockWindow, CountdownUpdate, DeviceSettings,
+    OutputControl, OutputSwitchUpdate, PortSchedule, SettingsChange)
 from ankerprime.protocol.codes import decode_value, lookup
 
 
@@ -32,8 +32,10 @@ GATED_CAPABILITIES = {
     Capability.CUSTOM_PROFILES: Capabilities.CUSTOM_CHARGING_MODE,
     Capability.DEVICE_IDENTIFICATION: Capabilities.DEVICE_IDENTIFICATION,
     Capability.MAX_COMPATIBILITY: Capabilities.MAX_COMPATIBILITY,
+    Capability.OWN_CLOCK_PICTURES: Capabilities.CUSTOM_IMAGE_TIME_DISPLAY,
     Capability.UFCS: Capabilities.UFCS_SWITCH,
 }
+PICTURE_PROTOCOL = 1
 
 
 class StateTracker:
@@ -154,6 +156,12 @@ class StateTracker:
         for capability, bit in GATED_CAPABILITIES.items():
             if not self._settings.supports(bit):
                 capabilities.pop(capability, None)
+        # Picture themes need protocol version 1 or the clock schedule bit,
+        # as the official app checks.
+        pictures = (self._settings.protocol_version == PICTURE_PROTOCOL
+                    or self._settings.supports(Capabilities.CLOCK_SCHEDULE))
+        if not pictures:
+            capabilities.pop(Capability.CLOCK_PICTURE, None)
         return capabilities
 
     def _port_reading(self, port: PortId, raw: RawPortReading) -> PortReading:
@@ -204,7 +212,8 @@ class StateTracker:
                                   hour_format=hours)
         clock = None
         if settings.clock is not None:
-            clock = _clock_settings(settings.clock, settings.clock_schedule)
+            clock = _clock_settings(settings.clock, settings.clock_schedule,
+                                    settings.image_time_display)
         mode = decode_value(CHARGING_MODE_CODES, settings.charging_mode)
         identification = settings.device_identification
         active = None
@@ -232,8 +241,8 @@ def _schedule(slot: PortSchedule) -> Schedule | None:
         return None
 
 
-def _clock_settings(clock: ClockState,
-                    window: ClockWindow | None) -> ClockSettings:
+def _clock_settings(clock: ClockState, window: ClockWindow | None,
+                    picture_time: bool | None) -> ClockSettings:
     schedule = None
     if window is not None:
         try:
@@ -243,6 +252,10 @@ def _clock_settings(clock: ClockState,
         except InvalidParameterError:
             schedule = None
     theme = decode_value(CLOCK_THEME_CODES, clock.theme_code)
+    picture_id = None
+    if clock.theme_code in THEME_PICTURE_CODES:
+        picture_id = clock.theme_id
     return ClockSettings(clock.is_on, theme=theme,
                          holiday_theme=clock.holiday_enabled,
-                         schedule=schedule)
+                         schedule=schedule, picture_id=picture_id,
+                         picture_time=picture_time)

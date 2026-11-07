@@ -11,9 +11,10 @@ from ankerprime.model.enums import (
     ScheduleSlot, ScreenOrientation, ScreenTimeout, Weekday)
 from ankerprime.model.errors import (
     AccountRefusedError, AnkerPrimeError, AuthenticationError,
-    ChargerConnectionError, ChargerTimeoutError,
-    InvalidParameterError, ProtocolError, UnknownProductError,
+    ChargerConnectionError, ChargerTimeoutError, InvalidParameterError,
+    PictureTransferError, ProtocolError, UnknownProductError,
     UnsupportedCapabilityError, WriteRejectedError)
+from ankerprime.model.pictures import ClockPicture
 from ankerprime.model.product import (
     A2345, A2687, PRODUCTS, OutputSpec,
     PortSpec, Product, ValueRange, get_product)
@@ -39,6 +40,7 @@ __all__ = [
     'ChargingMode',
     'ChargingProfile',
     'ChargingProtocol',
+    'ClockPicture',
     'ClockSchedule',
     'ClockSettings',
     'ClockTheme',
@@ -59,6 +61,7 @@ __all__ = [
     'OutputId',
     'OutputSpec',
     'OutputState',
+    'PictureTransferError',
     'PortId',
     'PortReading',
     'PortSpec',

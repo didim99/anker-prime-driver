@@ -9,10 +9,11 @@ from abc import ABC, abstractmethod
 
 from ankerprime.model.custom import (
     AccountSettings, ChargingProfile, CustomModeRules)
+from ankerprime.model.pictures import ClockPicture
 
 
 class ChargerAccount(ABC):
-    """Account-side settings and custom profiles of one charger.
+    """Account-side settings, custom profiles and pictures of one charger.
 
     Calls raise ``AuthenticationError`` when the account needs new
     credentials, ``ChargerConnectionError`` when the server is unreachable
@@ -62,4 +63,27 @@ class ChargerAccount(ABC):
 
     @abstractmethod
     async def delete_profile(self, profile_id: int) -> None:
+        pass
+
+    @abstractmethod
+    async def clock_pictures(self, language: str = 'en'
+                             ) -> list[ClockPicture]:
+        """The catalogue of clock pictures; ``language`` ``en`` or ``zh``."""
+
+        pass
+
+    @abstractmethod
+    async def own_pictures(self) -> list[ClockPicture]:
+        """The user's own pictures, with freshly signed links."""
+
+        pass
+
+    @abstractmethod
+    async def upload_own_picture(self, jpeg: bytes) -> None:
+        """Store a prepared JPEG as an own picture."""
+
+        pass
+
+    @abstractmethod
+    async def delete_own_picture(self, picture_id: int) -> None:
         pass

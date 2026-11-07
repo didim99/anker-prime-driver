@@ -22,6 +22,7 @@ from ankerprime.interfaces.storage import DocumentStore
 from ankerprime.model.custom import (
     AccountSettings, ChargingProfile, CustomModeRules)
 from ankerprime.model.enums import ProductCode
+from ankerprime.model.pictures import ClockPicture
 from ankerprime.model.errors import AuthenticationError, UnknownProductError
 from ankerprime.model.state import DeviceInfo
 from ankerprime.transport.aiomqtt_client import AiomqttConnector
@@ -255,6 +256,24 @@ class _AccountCharger(ChargerAccount):
     async def delete_profile(self, profile_id: int) -> None:
         await self._account.call(
             lambda client: self._client(client).delete_profile(profile_id))
+
+    async def clock_pictures(self, language: str = 'en'
+                             ) -> list[ClockPicture]:
+        return await self._account.call(
+            lambda client: self._client(client).clock_pictures(language))
+
+    async def own_pictures(self) -> list[ClockPicture]:
+        return await self._account.call(
+            lambda client: self._client(client).own_pictures())
+
+    async def upload_own_picture(self, jpeg: bytes) -> None:
+        await self._account.call(
+            lambda client: self._client(client).upload_own_picture(jpeg))
+
+    async def delete_own_picture(self, picture_id: int) -> None:
+        await self._account.call(
+            lambda client: self._client(client).delete_own_picture(
+                picture_id))
 
     def _client(self, client: CloudClient) -> MiniPowerClient:
         return MiniPowerClient(client, self._serial)

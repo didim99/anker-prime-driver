@@ -28,11 +28,18 @@ class Request:
     _url: str
     _headers: dict[str, str]
     _body: bytes
+    _method: str
 
-    def __init__(self, url: str, headers: Mapping[str, str], body: bytes):
+    def __init__(self, url: str, headers: Mapping[str, str], body: bytes,
+                 method: str = 'POST'):
         self._url = url
         self._headers = dict(headers)
         self._body = body
+        self._method = method
+
+    @property
+    def method(self) -> str:
+        return self._method
 
     @property
     def url(self) -> str:
@@ -81,22 +88,65 @@ class FakeHttpClient(HttpClient):
         self._requests.append(request)
         return self._handler(request)
 
+    async def put(self, url: str, headers: Mapping[str, str],
+                  body: bytes) -> HttpResponse:
+        request = Request(url, headers, body, method='PUT')
+        self._requests.append(request)
+        return self._handler(request)
+
+
+CATALOGUE = {'category': [
+    {'category_name': 'Nature', 'list': [
+        {'id': 31, 'title': 'Forest', 'image_url': 'https://cdn/forest.jpg',
+         'file_crc32': '1a2b3c4d', 'text_color': 'FF00FF00'},
+        {'id': 32, 'name': 'Sea', 'img_url': 'https://cdn/sea.jpg',
+         'hash_code': '0x0000beef'},
+        {'id': 33, 'title': 'No link'},
+    ]},
+    {'category_name': 'City', 'list': [
+        {'id': '34', 'title': 'Night', 'image_url': 'https://cdn/night.jpg',
+         'hash_code': '12345'},
+    ]},
+]}
+UPLOAD_URL = 'https://upload.example/signed?sig=1'
+PICTURE_ENDPOINTS = frozenset({
+    'get_clock_screensavers', 'get_manual_clock_screensavers',
+    'get_app_up_token_general', 'add_manual_clock_screensavers',
+    'delete_manual_clock_screensavers'})
+
 
 class FakeMiniPower:
-    """The account's charger settings and custom profiles (``mini_power``)."""
+    """The account's charger settings, custom profiles and pictures."""
 
     _settings: dict[str, dict[str, int]]
     _profiles: dict[int, dict[str, Any]]
+    _pictures: dict[int, dict[str, Any]]
+    _uploads: list[bytes]
     _next_id: int
     _calls: list[tuple[str, dict[str, Any]]]
 
     PREFIX = '/mini_power/v1/app/'
+    TICKET_PATH = '/app/cloudstor/get_app_up_token_general'
 
     def __init__(self) -> None:
         self._settings = {}
         self._profiles = {}
+        self._pictures = {}
+        self._uploads = []
         self._next_id = 100
         self._calls = []
+
+    @property
+    def pictures(self) -> dict[int, dict[str, Any]]:
+        """Own pictures by id, as registered."""
+
+        return self._pictures
+
+    @property
+    def uploads(self) -> list[bytes]:
+        """Bodies PUT to the signed upload link."""
+
+        return self._uploads
 
     @property
     def calls(self) -> list[tuple[str, dict[str, Any]]]:
@@ -114,13 +164,21 @@ class FakeMiniPower:
             'charging_device_identity_status_default_true': 1})
 
     def handles(self, request: Request) -> bool:
-        return request.path.startswith(self.PREFIX)
+        return (request.path.startswith(self.PREFIX)
+                or request.path == self.TICKET_PATH
+                or request.url == UPLOAD_URL)
 
     def __call__(self, request: Request) -> HttpResponse:
+        if request.method == 'PUT':
+            self._uploads.append(request.body)
+            return HttpResponse(200, b'')
         name = request.path.rsplit('/', 1)[1]
         body = request.json()
         self._calls.append((name, body))
         data: Any = None
+        if name in PICTURE_ENDPOINTS:
+            data = self._picture_call(name, body)
+            return json_response({'code': 0, 'msg': 'ok', 'data': data})
         if name == 'get_device_setting':
             values = self.settings(body['device_sn'])
             data = {'device_setting': {
@@ -149,6 +207,24 @@ class FakeMiniPower:
         else:
             return HttpResponse(404, b'')
         return json_response({'code': 0, 'msg': 'ok', 'data': data})
+
+    def _picture_call(self, name: str, body: dict[str, Any]) -> Any:
+        if name == 'get_clock_screensavers':
+            return CATALOGUE
+        if name == 'get_manual_clock_screensavers':
+            return {'list': [
+                {**picture, 'img_url': f'https://own/{picture["img_url"]}'
+                                       f'?fresh={len(self._calls)}'}
+                for picture in self._pictures.values()
+                if picture['sn'] == body['sn']]}
+        if name == 'get_app_up_token_general':
+            return {'uptoken': UPLOAD_URL, 'key_prefix': 'pictures/key1'}
+        if name == 'add_manual_clock_screensavers':
+            self._next_id += 1
+            self._pictures[self._next_id] = {**body, 'id': self._next_id}
+            return None
+        del self._pictures[body['id']]
+        return None
 
 
 class FakeAnkerCloud:

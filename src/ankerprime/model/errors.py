@@ -65,3 +65,7 @@ class WriteRejectedError(AnkerPrimeError):
     @property
     def status(self) -> int:
         return self._status
+
+
+class PictureTransferError(AnkerPrimeError):
+    """The charger could not fetch or store a picture."""

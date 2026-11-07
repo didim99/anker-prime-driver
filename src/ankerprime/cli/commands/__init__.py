@@ -11,6 +11,7 @@ from ankerprime.cli.commands.control import (
     OutputCommand, PriorityCommand, ScheduleCommand, SwitchCommand)
 from ankerprime.cli.commands.custom import CustomModeCommand, LabsCommand
 from ankerprime.cli.commands.energy import EnergyResetCommand
+from ankerprime.cli.commands.pictures import ClockPictureCommand
 from ankerprime.cli.commands.reading import MonitorCommand, StatusCommand
 
 
@@ -18,6 +19,7 @@ COMMANDS: dict[str, type[Command]] = {
     'allocation': AllocationCommand,
     'charger': ChargerAliasCommand,
     'clock': ClockCommand,
+    'clock-picture': ClockPictureCommand,
     'clock-schedule': ClockScheduleCommand,
     'countdown': CountdownCommand,
     'custom-mode': CustomModeCommand,

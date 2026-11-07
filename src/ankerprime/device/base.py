@@ -14,6 +14,7 @@ from ankerprime.model.enums import (
     ChargingMode, ClockTheme, DisplayLanguage, FixedAllocation, HourFormat,
     KnobDirection, OutputId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import AnkerPrimeError, UnsupportedCapabilityError
+from ankerprime.model.pictures import ClockPicture
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
 
@@ -169,6 +170,32 @@ class BaseCharger(Charger):
         self._require(Capability.CUSTOM_PROFILES)
         await self._reload_custom_profiles()
 
+    async def clock_pictures(self, language: str = 'en'
+                             ) -> tuple[ClockPicture, ...]:
+        self._require(Capability.CLOCK_PICTURE)
+        return await self._clock_pictures(language)
+
+    async def own_clock_pictures(self) -> tuple[ClockPicture, ...]:
+        self._require(Capability.OWN_CLOCK_PICTURES)
+        return await self._own_clock_pictures()
+
+    async def apply_clock_picture(self, picture: ClockPicture) -> None:
+        self._require(Capability.OWN_CLOCK_PICTURES if picture.own
+                      else Capability.CLOCK_PICTURE)
+        await self._apply_clock_picture(picture)
+
+    async def upload_clock_picture(self, jpeg: bytes) -> None:
+        self._require(Capability.OWN_CLOCK_PICTURES)
+        await self._upload_clock_picture(jpeg)
+
+    async def delete_clock_picture(self, picture_id: int) -> None:
+        self._require(Capability.OWN_CLOCK_PICTURES)
+        await self._delete_clock_picture(picture_id)
+
+    async def set_picture_time(self, enabled: bool) -> None:
+        self._require(Capability.OWN_CLOCK_PICTURES)
+        await self._set_picture_time(enabled)
+
     def _require(self, capability: Capability) -> None:
         if not self.supports(capability):
             raise UnsupportedCapabilityError(capability)
@@ -267,3 +294,22 @@ class BaseCharger(Charger):
 
     async def _reload_custom_profiles(self) -> None:
         raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)
+
+    async def _clock_pictures(self, language: str
+                              ) -> tuple[ClockPicture, ...]:
+        raise UnsupportedCapabilityError(Capability.CLOCK_PICTURE)
+
+    async def _own_clock_pictures(self) -> tuple[ClockPicture, ...]:
+        raise UnsupportedCapabilityError(Capability.OWN_CLOCK_PICTURES)
+
+    async def _apply_clock_picture(self, picture: ClockPicture) -> None:
+        raise UnsupportedCapabilityError(Capability.CLOCK_PICTURE)
+
+    async def _upload_clock_picture(self, jpeg: bytes) -> None:
+        raise UnsupportedCapabilityError(Capability.OWN_CLOCK_PICTURES)
+
+    async def _delete_clock_picture(self, picture_id: int) -> None:
+        raise UnsupportedCapabilityError(Capability.OWN_CLOCK_PICTURES)
+
+    async def _set_picture_time(self, enabled: bool) -> None:
+        raise UnsupportedCapabilityError(Capability.OWN_CLOCK_PICTURES)

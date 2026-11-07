@@ -45,7 +45,7 @@ def test_unknown_port_and_output_raise() -> None:
 def test_capability_lookup() -> None:
     assert A2345.verification(Capability.OUTPUT_SWITCH) == Verification.VERIFIED
     assert A2345.supports(Capability.OUTPUT_SCHEDULE)
-    assert not A2345.supports(Capability.CLOCK_PICTURE)
+    assert not A2687.supports(Capability.SCREEN_PICTURE)
     assert not A2345.supports(Capability.SCREEN_ORIENTATION)
     assert A2345.verification(Capability.SCREEN_ORIENTATION) is None
     assert A2687.verification(Capability.SCREEN_BRIGHTNESS) == Verification.VERIFIED

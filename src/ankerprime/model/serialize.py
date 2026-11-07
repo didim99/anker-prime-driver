@@ -63,7 +63,9 @@ def _settings(settings: ChargerSettings) -> dict[str, Any]:
     if clock is not None:
         clock_data = {'enabled': clock.enabled, 'theme': enum_value(clock.theme),
                       'holiday_theme': clock.holiday_theme,
-                      'schedule': _clock_schedule(clock.schedule)}
+                      'schedule': _clock_schedule(clock.schedule),
+                      'picture_id': clock.picture_id,
+                      'picture_time': clock.picture_time}
     return {
         'charging_mode': enum_value(settings.charging_mode),
         'charging_mode_code': settings.charging_mode_code,

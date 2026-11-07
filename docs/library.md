@@ -128,10 +128,11 @@ Dependencies point downwards. Layers meet at the abstract interfaces in
   Bluetooth share the same device logic.
 - `Charger`: the public charger API.
 - `ChargerAccount`: charger settings kept in the user's account (the 250W's
-  custom profiles and switches); `CloudAccount` provides one per charger, so
-  the device layer does not depend on the cloud client.
+  custom profiles, switches and clock pictures); `CloudAccount` provides one
+  per charger, so the device layer does not depend on the cloud client.
 - `DocumentStore`: async key → JSON document storage.
-- `HttpClient`, `MqttConnector`: network adapters (aiohttp and aiomqtt
+- `HttpClient` (POST, and PUT for signed uploads), `MqttConnector`: network
+  adapters (aiohttp and aiomqtt
   implementations are included; tests and embedders can substitute their
   own).
 
@@ -150,6 +151,7 @@ Dependencies point downwards. Layers meet at the abstract interfaces in
 | `reset_energy(ports=None)` | zero energy counters, also while disconnected                                                                                                                             |
 | one method per capability  | `set_output`, `start_countdown`, `set_charging_mode`, `set_brightness`, …                                                                                                 |
 | custom mode                | `apply_custom_profile`, `exit_custom_mode`; with stored profiles also `save_custom_profile`, `delete_custom_profile`, `reload_custom_profiles`, `set_custom_mode_enabled` |
+| clock pictures             | `clock_pictures`, `own_clock_pictures`, `apply_clock_picture`, `upload_clock_picture`, `delete_clock_picture`, `set_picture_time`                                         |
 
 Listeners run on the event loop and must not block; an exception in one is
 logged and does not affect others. States are immutable and published only
@@ -242,6 +244,33 @@ await charger.exit_custom_mode()
 Saving a profile that is in use applies it again; deleting it leaves custom
 mode first. Protocol choices are sent with the profile only to firmware that
 has per-port protocols and no separate protocol manager.
+
+### Clock pictures
+
+`clock_pictures(language)` lists the cloud catalogue and
+`own_clock_pictures()` the account's own pictures (at most eight), both as
+`ClockPicture` (id, title, category, link, CRC-32, text color, `own`).
+`apply_clock_picture()` sends the picture to the charger, which downloads it
+itself; the call returns once the charger reports the download finished
+(`PictureTransferError` when it failed, `ChargerTimeoutError` after 45 s
+without a report). Own pictures are looked up again first, since their links
+expire within minutes. `upload_clock_picture(jpeg)` and
+`delete_clock_picture(id)` manage own pictures; `set_picture_time()` shows
+the time over them. `state.settings.clock` has the shown `picture_id` and
+`picture_time`.
+
+`ankerprime.pictures.prepare_picture(data)` turns any image file into the
+JPEG the charger expects (480×200, center crop on black, quality searched for
+the official app's size window); it needs the `[pictures]` extra (Pillow).
+
+```python
+from ankerprime.pictures import prepare_picture
+
+await charger.upload_clock_picture(
+    prepare_picture(Path('beach.jpg').read_bytes()))
+picture = (await charger.own_clock_pictures())[-1]
+await charger.apply_clock_picture(picture)
+```
 
 ### Bluetooth (160W)
 

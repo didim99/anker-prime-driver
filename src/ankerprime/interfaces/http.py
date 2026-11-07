@@ -39,3 +39,10 @@ class HttpClient(ABC):
         """Send a POST; raises ``ChargerConnectionError`` on network failure."""
 
         pass
+
+    @abstractmethod
+    async def put(self, url: str, headers: Mapping[str, str],
+                  body: bytes) -> HttpResponse:
+        """Send a PUT (signed uploads); errors as for ``post``."""
+
+        pass

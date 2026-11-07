@@ -394,7 +394,7 @@ async def test_clock_writes(device: A2345Device,
     assert a6.raw[1:] == b'assets/img/a2345/icl_a2345_theme2.png'
     clock = device.state.settings.clock
     assert clock is not None and clock.enabled
-    with pytest.raises(UnsupportedCapabilityError):
+    with pytest.raises(InvalidParameterError, match='apply_clock_picture'):
         await device.set_clock(True, ClockTheme.PICTURE)
     await device.set_clock_schedule(ClockSchedule(22, 0, 7, 0))
     await device.set_holiday_theme(True)

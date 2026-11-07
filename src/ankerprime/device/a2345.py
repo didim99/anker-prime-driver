@@ -19,6 +19,9 @@ profiles the account keeps, on every connection and on ``refresh``. Switches
 the account stores (custom mode, max compatibility, device identification)
 are written to the account first, then to the charger, as the official app
 does.
+
+Clock pictures are downloaded by the charger itself; applying one waits for
+its download report.
 """
 
 from __future__ import annotations
@@ -42,24 +45,26 @@ from ankerprime.model.enums import (
     OutputId, PortId, ScheduleSlot, ScreenTimeout)
 from ankerprime.model.errors import (
     AnkerPrimeError, AuthenticationError, ChargerConnectionError,
-    ChargerTimeoutError, InvalidParameterError, ProtocolError,
-    UnsupportedCapabilityError, WriteRejectedError)
+    ChargerTimeoutError, InvalidParameterError, PictureTransferError,
+    ProtocolError, UnsupportedCapabilityError, WriteRejectedError)
+from ankerprime.model.pictures import ClockPicture
 from ankerprime.model.product import A2345
 from ankerprime.model.state import ClockSchedule, DeviceInfo, Schedule
 from ankerprime.protocol.a2345 import commands
 from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
     KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES)
-from ankerprime.protocol.a2345.commands import Command
+from ankerprime.protocol.a2345.commands import (
+    DEFAULT_TEXT_COLOR, MAX_URL_LENGTH, Command)
 from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import (
     RealtimeTelemetry, StatusSnapshot, decode_message)
 from ankerprime.protocol.a2345.settings import (
-    CUSTOM_CHARGING_MODE_CODE, Capabilities, ChargingModeUpdate,
-    ClockState, ClockUpdate, CountdownUpdate, CustomProfile,
-    FirmwareVersionUpdate, OutputSwitchUpdate, PortSchedule,
+    CUSTOM_CHARGING_MODE_CODE, Capabilities,
+    ChargingModeUpdate, ClockState, ClockUpdate, CountdownUpdate,
+    CustomProfile, FirmwareVersionUpdate, OutputSwitchUpdate, PortSchedule,
     PriorityUpdate, ScheduleUpdate, SettingField, SettingsChange,
-    SettingsUpdate, ValueUpdate, WriteAcknowledgement)
+    SettingsUpdate, ThemeDownloadUpdate, ValueUpdate, WriteAcknowledgement)
 from ankerprime.protocol.a2345.tracker import StateTracker
 from ankerprime.protocol.codes import decode_value, encode_value
 from ankerprime.utils import Clock, redact, utc_now
@@ -68,6 +73,11 @@ from ankerprime.utils import Clock, redact, utc_now
 logger = logging.getLogger(__name__)
 
 WriteKey = tuple[int, OutputId | None, ScheduleSlot | None]
+
+JPEG_MAGIC = b'\xff\xd8\xff'
+DOWNLOAD_FAILED = 0
+DOWNLOAD_DONE = 1
+DOWNLOAD_NEEDS_BLUETOOTH = 4
 
 
 @dataclass(init=False)
@@ -87,6 +97,7 @@ class A2345Timings:
     _write_waits: tuple[float, ...]
     _priority_waits: tuple[float, ...]
     _custom_waits: tuple[float, ...]
+    _picture_download: float
 
     def __init__(self, *, realtime_refresh: float = 8.0,
                  stale_after: float = 15.0, telemetry_deadline: float = 45.0,
@@ -97,7 +108,8 @@ class A2345Timings:
                  energy_save: float = 60.0, tick: float = 1.0,
                  write_waits: Sequence[float] = (1.5, 3.0),
                  priority_waits: Sequence[float] = (4.0,),
-                 custom_waits: Sequence[float] = (3.0, 4.0)):
+                 custom_waits: Sequence[float] = (3.0, 4.0),
+                 picture_download: float = 45.0):
         self._realtime_refresh = realtime_refresh
         self._stale_after = stale_after
         self._telemetry_deadline = telemetry_deadline
@@ -111,6 +123,7 @@ class A2345Timings:
         self._write_waits = tuple(write_waits)
         self._priority_waits = tuple(priority_waits)
         self._custom_waits = tuple(custom_waits)
+        self._picture_download = picture_download
 
     @property
     def realtime_refresh(self) -> float:
@@ -182,6 +195,12 @@ class A2345Timings:
 
         return self._custom_waits
 
+    @property
+    def picture_download(self) -> float:
+        """Wait for the charger's report on a clock picture download."""
+
+        return self._picture_download
+
     def retry_delay(self, failures: int) -> float:
         """Exponential delay before reconnect attempt ``failures``."""
 
@@ -206,6 +225,25 @@ class _PendingWrite:
 
     @property
     def future(self) -> asyncio.Future[WriteAcknowledgement]:
+        return self._future
+
+
+class _PendingDownload:
+    """A clock picture whose download report is awaited."""
+
+    _picture_id: int
+    _future: asyncio.Future[None]
+
+    def __init__(self, picture_id: int, future: asyncio.Future[None]):
+        self._picture_id = picture_id
+        self._future = future
+
+    @property
+    def picture_id(self) -> int:
+        return self._picture_id
+
+    @property
+    def future(self) -> asyncio.Future[None]:
         return self._future
 
 
@@ -245,6 +283,8 @@ class A2345Device(BaseCharger, ChannelListener):
     _account_settings: AccountSettings | None
     _profiles: tuple[ChargingProfile, ...] | None
     _account_lock: asyncio.Lock
+    _catalogue: tuple[ClockPicture, ...] | None
+    _download: _PendingDownload | None
 
     def __init__(self, channel: Channel, info: DeviceInfo | None = None, *,
                  account: ChargerAccount | None = None,
@@ -282,6 +322,8 @@ class A2345Device(BaseCharger, ChannelListener):
         self._account_settings = None
         self._profiles = None
         self._account_lock = asyncio.Lock()
+        self._catalogue = None
+        self._download = None
         self._publish_state()
 
     @property
@@ -300,6 +342,10 @@ class A2345Device(BaseCharger, ChannelListener):
             return
         if not self._tracker.apply(message, self._clock()):
             return
+        if isinstance(message, SettingsChange):
+            for update in message.updates:
+                if isinstance(update, ThemeDownloadUpdate):
+                    self._on_download(update)
         if isinstance(message, RealtimeTelemetry):
             self._record_energy(message)
         if isinstance(message, (RealtimeTelemetry, StatusSnapshot)):
@@ -433,20 +479,31 @@ class A2345Device(BaseCharger, ChannelListener):
 
     async def _set_clock(self, enabled: bool, theme: ClockTheme | None
                          ) -> None:
+        if theme in (ClockTheme.PICTURE, ClockTheme.CUSTOM):
+            raise InvalidParameterError(
+                'pictures are chosen with apply_clock_picture')
         settings = self._tracker.settings
         clock = settings.clock if settings is not None else None
         if theme is None and clock is not None:
             theme = decode_value(CLOCK_THEME_CODES, clock.theme_code)
         if theme is None:
             raise InvalidParameterError('current clock theme unknown')
-        if theme in (ClockTheme.PICTURE, ClockTheme.CUSTOM):
-            raise UnsupportedCapabilityError(Capability.CLOCK_PICTURE)
-        url = commands.builtin_theme_url(theme)
         holiday = clock.holiday_enabled if clock is not None else False
-        expected = ClockState(enabled, holiday and enabled,
-                              CLOCK_THEME_CODES[theme])
-        await self._write(commands.set_clock_theme(enabled, theme, url=url),
-                          [ClockUpdate(expected)], include_theme=True)
+        if clock is not None and theme in (ClockTheme.PICTURE,
+                                           ClockTheme.CUSTOM):
+            # Switching resends the current theme, so the picture is needed.
+            picture = await self._current_picture(clock)
+            command = _picture_command(enabled, picture, toggle=True)
+            expected = ClockState(enabled, holiday and enabled,
+                                  CLOCK_THEME_CODES[theme],
+                                  theme_id=picture.picture_id)
+        else:
+            url = commands.builtin_theme_url(theme)
+            command = commands.set_clock_theme(enabled, theme, url=url)
+            expected = ClockState(enabled, holiday and enabled,
+                                  CLOCK_THEME_CODES[theme])
+        await self._write(command, [ClockUpdate(expected)],
+                          include_theme=True)
 
     async def _set_clock_schedule(self, schedule: ClockSchedule) -> None:
         await self._write(commands.set_clock_schedule(schedule))
@@ -533,6 +590,99 @@ class A2345Device(BaseCharger, ChannelListener):
         self._profiles = tuple(profiles)
         self._publish_state()
 
+    async def _clock_pictures(self, language: str
+                              ) -> tuple[ClockPicture, ...]:
+        account = self._require_account(Capability.CLOCK_PICTURE)
+        pictures = tuple(await account.clock_pictures(language))
+        self._catalogue = pictures
+        return pictures
+
+    async def _own_clock_pictures(self) -> tuple[ClockPicture, ...]:
+        account = self._require_account(Capability.OWN_CLOCK_PICTURES)
+        return tuple(await account.own_pictures())
+
+    async def _apply_clock_picture(self, picture: ClockPicture) -> None:
+        if picture.own:
+            # Own picture links are signed for a few minutes only.
+            picture = await self._own_picture(picture.picture_id)
+        command = _picture_command(True, picture, toggle=False)
+        # No await between this check and claiming the slot.
+        if self._download is not None and not self._download.future.done():
+            raise InvalidParameterError('another picture is downloading')
+        future = asyncio.get_running_loop().create_future()
+        download = _PendingDownload(picture.picture_id, future)
+        self._download = download
+        try:
+            await self._write(command, include_theme=True)
+            await asyncio.wait_for(future, self._timings.picture_download)
+        except TimeoutError:
+            raise ChargerTimeoutError(
+                'the charger did not report the picture download') from None
+        finally:
+            if self._download is download:
+                self._download = None
+
+    async def _upload_clock_picture(self, jpeg: bytes) -> None:
+        account = self._require_account(Capability.OWN_CLOCK_PICTURES)
+        if not jpeg.startswith(JPEG_MAGIC):
+            raise InvalidParameterError('own pictures must be JPEG files')
+        pictures = await account.own_pictures()
+        if len(pictures) >= ClockPicture.OWN_LIMIT:
+            raise InvalidParameterError(
+                f'the account keeps at most {ClockPicture.OWN_LIMIT} '
+                'own pictures')
+        await account.upload_own_picture(jpeg)
+
+    async def _delete_clock_picture(self, picture_id: int) -> None:
+        account = self._require_account(Capability.OWN_CLOCK_PICTURES)
+        await account.delete_own_picture(picture_id)
+
+    async def _set_picture_time(self, enabled: bool) -> None:
+        settings = self._tracker.settings
+        clock = settings.clock if settings is not None else None
+        expected = [ClockUpdate(clock, enabled)] if clock is not None else []
+        await self._write(commands.set_image_time_display(enabled), expected,
+                          include_theme=True)
+
+    async def _current_picture(self, clock: ClockState) -> ClockPicture:
+        """The picture the clock shows, looked up in the account."""
+
+        if clock.theme_id is None:
+            raise InvalidParameterError('current clock picture unknown')
+        if clock.theme_code == CLOCK_THEME_CODES[ClockTheme.CUSTOM]:
+            return await self._own_picture(clock.theme_id)
+        catalogue = self._catalogue
+        if catalogue is None:
+            catalogue = await self._clock_pictures('en')
+        for picture in catalogue:
+            if picture.picture_id == clock.theme_id:
+                return picture
+        raise InvalidParameterError(
+            f'clock picture {clock.theme_id} is not in the catalogue')
+
+    async def _own_picture(self, picture_id: int) -> ClockPicture:
+        for picture in await self._own_clock_pictures():
+            if picture.picture_id == picture_id:
+                return picture
+        raise InvalidParameterError(f'no own picture {picture_id}')
+
+    def _on_download(self, update: ThemeDownloadUpdate) -> None:
+        download = self._download
+        if download is None or download.future.done():
+            return
+        if update.theme_id is not None and (
+                update.theme_id != download.picture_id):
+            return
+        if update.status == DOWNLOAD_DONE:
+            download.future.set_result(None)
+        elif update.status == DOWNLOAD_FAILED:
+            download.future.set_exception(PictureTransferError(
+                'the charger could not download the picture'))
+        elif update.status == DOWNLOAD_NEEDS_BLUETOOTH:
+            download.future.set_exception(PictureTransferError(
+                'the charger asks for the picture over Bluetooth, '
+                'which this library cannot send'))
+
     @property
     def _rules(self) -> CustomModeRules:
         rules = self._product.custom_mode
@@ -544,9 +694,10 @@ class A2345Device(BaseCharger, ChannelListener):
     def _mainland(self) -> bool:
         return self._account is not None and self._account.mainland
 
-    def _require_account(self) -> ChargerAccount:
+    def _require_account(self, capability: Capability
+                         = Capability.CUSTOM_PROFILES) -> ChargerAccount:
         if self._account is None:
-            raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)
+            raise UnsupportedCapabilityError(capability)
         return self._account
 
     def _active_profile(self) -> int | None:
@@ -670,6 +821,9 @@ class A2345Device(BaseCharger, ChannelListener):
         for pending in self._pending:
             if not pending.future.done():
                 pending.future.set_exception(error)
+        download = self._download
+        if download is not None and not download.future.done():
+            download.future.set_exception(error)
         self._settings_fresh = False
         self._available = False
         self._publish_state()
@@ -844,7 +998,9 @@ class A2345Device(BaseCharger, ChannelListener):
     def _publish_state(self) -> None:
         unavailable: tuple[Capability, ...] = ()
         if self._account is None:
-            unavailable = (Capability.CUSTOM_PROFILES,)
+            unavailable = (Capability.CUSTOM_PROFILES,
+                           Capability.CLOCK_PICTURE,
+                           Capability.OWN_CLOCK_PICTURES)
         state = self._tracker.build(info=self._info,
                                     available=self._available,
                                     energy=self._energy.counters,
@@ -852,6 +1008,32 @@ class A2345Device(BaseCharger, ChannelListener):
                                     profiles=self._profiles,
                                     unavailable=unavailable)
         self._publish(state)
+
+
+def _picture_command(clock_on: bool, picture: ClockPicture, *,
+                     toggle: bool) -> Command:
+    """``0x0205`` showing a picture, as the official app builds it.
+
+    A catalogue picture goes in the theme URL field with its text colour.
+    An own picture's link goes in the long custom field, except when only
+    switching the clock: then in the theme URL field if it fits.
+    """
+
+    if not picture.own:
+        color = picture.text_color
+        return commands.set_clock_theme(
+            clock_on, ClockTheme.PICTURE, theme_id=picture.picture_id,
+            image_crc=picture.crc32, url=picture.image_url,
+            text_color=DEFAULT_TEXT_COLOR if color is None else color)
+    url = picture.image_url
+    fits = len(url.encode('utf-8')) <= MAX_URL_LENGTH
+    if toggle and fits:
+        return commands.set_clock_theme(
+            clock_on, ClockTheme.CUSTOM, theme_id=picture.picture_id,
+            image_crc=picture.crc32, url=url)
+    return commands.set_clock_theme(
+        clock_on, ClockTheme.CUSTOM, theme_id=picture.picture_id,
+        image_crc=picture.crc32, custom_url=url)
 
 
 def _monotonic() -> float:

@@ -26,6 +26,10 @@ class Capability(StrEnum):
     CLOCK_SCHEDULE = 'clock_schedule'
     HOLIDAY_THEME = 'holiday_theme'
     CLOCK_PICTURE = 'clock_picture'
+    """Picture themes of the clock from the Anker cloud catalogue."""
+
+    OWN_CLOCK_PICTURES = 'own_clock_pictures'
+    """The account's own clock pictures and the time shown over them."""
     SCREEN_PICTURE = 'screen_picture'
     MAX_COMPATIBILITY = 'max_compatibility'
     DEVICE_IDENTIFICATION = 'device_identification'

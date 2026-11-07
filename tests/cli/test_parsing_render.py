@@ -176,6 +176,7 @@ def test_state_to_dict_is_json_ready() -> None:
         'enabled': False, 'time': '08:00', 'weekdays': 2}
     assert restored['settings']['display']['screen_timeout'] == '30s'
     assert restored['settings']['clock']['schedule']['end'] == '23:00'
+    assert restored['settings']['clock']['picture_id'] is None
     assert restored['capabilities']['output_switch'] == 'verified'
     assert restored['settings']['active_profile'] == 1
     assert restored['settings']['custom_profiles'] is None

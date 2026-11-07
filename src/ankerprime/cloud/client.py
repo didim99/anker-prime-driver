@@ -277,6 +277,17 @@ class CloudClient:
                                 f'{root.get("msg") or ""}')
         return root.get('data')
 
+    async def upload(self, url: str, body: bytes, content_type: str) -> None:
+        """PUT a file to a signed upload link the API handed out."""
+
+        if not url.startswith('https://'):
+            raise ProtocolError('upload link is not HTTPS')
+        headers = {'content-type': content_type,
+                   'content-length': str(len(body))}
+        response = await self._http.put(url, headers, body)
+        if response.status != 200:
+            raise ChargerConnectionError(f'upload HTTP {response.status}')
+
     async def _post(self, path: str) -> dict[str, Any]:
         data = await self.request(path)
         if not isinstance(data, dict):

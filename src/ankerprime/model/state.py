@@ -359,14 +359,20 @@ class ClockSettings:
     _theme: ClockTheme | None
     _holiday_theme: bool | None
     _schedule: ClockSchedule | None
+    _picture_id: int | None
+    _picture_time: bool | None
 
     def __init__(self, enabled: bool, *, theme: ClockTheme | None = None,
                  holiday_theme: bool | None = None,
-                 schedule: ClockSchedule | None = None):
+                 schedule: ClockSchedule | None = None,
+                 picture_id: int | None = None,
+                 picture_time: bool | None = None):
         self._enabled = enabled
         self._theme = theme
         self._holiday_theme = holiday_theme
         self._schedule = schedule
+        self._picture_id = picture_id
+        self._picture_time = picture_time
 
     @property
     def enabled(self) -> bool:
@@ -385,6 +391,18 @@ class ClockSettings:
     @property
     def schedule(self) -> ClockSchedule | None:
         return self._schedule
+
+    @property
+    def picture_id(self) -> int | None:
+        """Id of the picture shown with a picture or own-picture theme."""
+
+        return self._picture_id
+
+    @property
+    def picture_time(self) -> bool | None:
+        """The time is shown over own pictures."""
+
+        return self._picture_time
 
 
 @dataclass(init=False)

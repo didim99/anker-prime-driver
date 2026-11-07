@@ -242,9 +242,14 @@ def _settings(state: ChargerState, painter: Painter) -> str:
     lines.append(_line(painter, 'Display', display_parts))
     clock = settings.clock
     if clock is not None:
-        parts = [_switch(painter, clock.enabled),
-                 enum_value(clock.theme) or UNKNOWN,
+        theme = enum_value(clock.theme) or UNKNOWN
+        if clock.picture_id is not None:
+            theme += f' {clock.picture_id}'
+        parts = [_switch(painter, clock.enabled), theme,
                  'holiday ' + _switch(painter, clock.holiday_theme)]
+        if clock.picture_time is not None:
+            parts.append('time over own pictures '
+                         + _switch(painter, clock.picture_time))
         if clock.schedule is not None:
             parts.append(_clock_schedule(clock.schedule))
         lines.append(_line(painter, 'Clock', parts))

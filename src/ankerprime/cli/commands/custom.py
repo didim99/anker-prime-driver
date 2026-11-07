@@ -3,12 +3,12 @@
 import argparse
 
 from ankerprime.cli.base import ChargerCommand, CliContext
-from ankerprime.cli.commands.control import EXPERIMENTAL_NOTE
+from ankerprime.cli.commands.control import confirm
 from ankerprime.cli.parsing import enum_converter, parse_output, parse_switch
 from ankerprime.cli.render import render_table
 from ankerprime.cli.style import Painter
 from ankerprime.interfaces.charger import Charger
-from ankerprime.model.capabilities import Capability, Verification
+from ankerprime.model.capabilities import Capability
 from ankerprime.model.custom import (
     ChargingProfile, CustomModeRules, CustomPortLimit, CustomProtocol)
 from ankerprime.model.enums import OutputId
@@ -65,7 +65,7 @@ class CustomModeCommand(ChargerCommand):
         action = args.action or 'list'
         if action == 'exit':
             await charger.exit_custom_mode()
-            self._confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
+            confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
                           'Custom mode left.')
             return 0
         await charger.reload_custom_profiles()
@@ -80,12 +80,12 @@ class CustomModeCommand(ChargerCommand):
             case 'delete':
                 _stored(charger, args.number)
                 await charger.delete_custom_profile(args.number)
-                self._confirm(context, charger, Capability.CUSTOM_PROFILES,
+                confirm(context, charger, Capability.CUSTOM_PROFILES,
                               f'Profile {args.number} deleted.')
             case 'apply':
                 profile = _stored(charger, args.number)
                 await charger.apply_custom_profile(profile)
-                self._confirm(context, charger,
+                confirm(context, charger,
                               Capability.CUSTOM_CHARGING_MODE,
                               f'Profile {profile.number} "{profile.name}" '
                               f'applied.')
@@ -133,16 +133,8 @@ class CustomModeCommand(ChargerCommand):
         message = f'Profile {args.number} {verb}.'
         if charger.state.settings.active_profile == args.number:
             message += ' It is in use; the charger has the new limits.'
-        self._confirm(context, charger, Capability.CUSTOM_PROFILES, message)
+        confirm(context, charger, Capability.CUSTOM_PROFILES, message)
 
-    def _confirm(self, context: CliContext, charger: Charger,
-                 capability: Capability, message: str) -> None:
-        painter = context.painter
-        context.print(painter.good(message))
-        verification = charger.state.capabilities.get(capability)
-        if verification == Verification.EXPERIMENTAL:
-            note = EXPERIMENTAL_NOTE.format(capability=capability)
-            context.print(painter.warn(note))
 
 
 class LabsCommand(ChargerCommand):
@@ -153,7 +145,6 @@ class LabsCommand(ChargerCommand):
 
     async def run_charger(self, context: CliContext, charger: Charger,
                           args: argparse.Namespace) -> int:
-        painter = context.painter
         if args.on is None:
             await charger.reload_custom_profiles()
             enabled = charger.state.settings.custom_mode_enabled
@@ -163,12 +154,8 @@ class LabsCommand(ChargerCommand):
             return 0
         await charger.set_custom_mode_enabled(args.on)
         state = 'on' if args.on else 'off'
-        context.print(painter.good(f'Custom mode setting switched {state}.'))
-        verification = charger.state.capabilities.get(
-            Capability.CUSTOM_PROFILES)
-        if verification == Verification.EXPERIMENTAL:
-            context.print(painter.warn(EXPERIMENTAL_NOTE.format(
-                capability=Capability.CUSTOM_PROFILES)))
+        confirm(context, charger, Capability.CUSTOM_PROFILES,
+                f'Custom mode setting switched {state}.')
         return 0
 
     def add_charger_arguments(self, parser: argparse.ArgumentParser) -> None:

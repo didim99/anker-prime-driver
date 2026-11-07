@@ -28,12 +28,30 @@ to the development history afterwards.
   runs one with the account's re-login.
 - CLI: `custom-mode list|show|add|edit|delete|apply|exit` and `labs`;
   `status` shows the profile in use and the custom mode setting.
+- 250W clock pictures (experimental):
+  - the cloud catalogue (`clock_pictures()`, English or Chinese titles) and
+    the account's own pictures (`own_clock_pictures()`, at most eight) as
+    `ClockPicture`;
+  - `apply_clock_picture()` waits for the charger's download report
+    (`PictureTransferError`, `ChargerTimeoutError`); own pictures are
+    re-listed first for a fresh link;
+  - `upload_clock_picture()`, `delete_clock_picture()`, `set_picture_time()`;
+  - state: `clock.picture_id`, `clock.picture_time`; capabilities
+    `clock_picture` (now experimental) and `own_clock_pictures`.
+- `ankerprime.pictures.prepare_picture()` and the `[pictures]` extra
+  (Pillow): fill-crop to 480×200 and a JPEG in the official size window.
+- `HttpClient.put()` for signed uploads; `CloudClient.upload()`.
+- CLI: `clock-picture list|apply|upload|delete|time`; `status` shows the
+  shown picture and the time setting.
 
 ### Changed
 - 250W: max compatibility and device identification exclude each other;
   switching one on first switches the other off. With an account, both are
   written to the account first, then to the charger, as the official app
   does.
+- 250W: switching the clock while a picture is shown resends that picture
+  instead of failing; `set_clock()` with a picture theme raises
+  `InvalidParameterError` (use `apply_clock_picture()`).
 
 ## [0.7.3] - 2026-11-07
 

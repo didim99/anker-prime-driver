@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from ankerprime.model import (
-    A2345, Capability, ChargerState, ClockSchedule,
+    A2345, A2687, Capability, ChargerState, ClockSchedule,
     Countdown, InvalidParameterError, OutputId, OutputState,
     PortId, PortReading, Schedule, Verification, Weekday)
 
@@ -80,7 +80,8 @@ def test_capabilities_narrowed_by_firmware() -> None:
     state = ChargerState(A2345, capabilities=narrowed)
     assert not state.supports(Capability.UFCS)
     assert state.supports(Capability.OUTPUT_SWITCH)
-    assert not state.supports(Capability.CLOCK_PICTURE)
+    planned = ChargerState(A2687)
+    assert not planned.supports(Capability.SCREEN_PICTURE)
     assert state.capabilities[Capability.OUTPUT_SWITCH] == Verification.VERIFIED
 
 

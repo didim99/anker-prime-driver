@@ -3,11 +3,13 @@
 The account stores the Labs switch that makes custom mode available, the
 max compatibility and device identification switches, and up to four
 custom charging profiles. The official app writes each switch here before
-sending it to the charger.
+sending it to the charger. The same API serves the catalogue of clock
+pictures and keeps up to eight of the user's own.
 """
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
@@ -15,8 +17,9 @@ from ankerprime.cloud.client import CloudClient
 from ankerprime.model.custom import (
     AccountSettings, ChargingProfile,
     CustomModeRules, CustomPortLimit, CustomProtocol)
-from ankerprime.model.enums import OutputId
+from ankerprime.model.enums import OutputId, ProductCode
 from ankerprime.model.errors import ProtocolError
+from ankerprime.model.pictures import ClockPicture
 
 
 SETTINGS_PATH = 'mini_power/v1/app/setting/get_device_setting'
@@ -30,6 +33,17 @@ PROFILES_PATH = 'mini_power/v1/app/charging/get_charging_mode_list'
 ADD_PROFILE_PATH = 'mini_power/v1/app/charging/add_charging_mode'
 UPDATE_PROFILE_PATH = 'mini_power/v1/app/charging/update_charging_mode'
 DELETE_PROFILE_PATH = 'mini_power/v1/app/charging/delete_charging_mode'
+CATALOGUE_PATH = 'mini_power/v1/app/style/get_clock_screensavers'
+OWN_PICTURES_PATH = 'mini_power/v1/app/style/get_manual_clock_screensavers'
+ADD_PICTURE_PATH = 'mini_power/v1/app/style/add_manual_clock_screensavers'
+DELETE_PICTURE_PATH = ('mini_power/v1/app/style/'
+                       'delete_manual_clock_screensavers')
+UPLOAD_TICKET_PATH = 'app/cloudstor/get_app_up_token_general'
+
+UPLOAD_FILE_NAME = 'cropped_image.jpg'
+UPLOAD_CONTENT_TYPE = 'binary/octet-stream'
+UPLOAD_TYPE = 106
+CATALOGUE_LANGUAGES = {'en': 'en', 'zh': 'zh-Hans', 'zh-hans': 'zh-Hans'}
 
 CUSTOM_MODE_KEY = 'charging_mode_status'
 COMPATIBILITY_KEY = 'compatibility_status'
@@ -140,6 +154,72 @@ class MiniPowerClient:
     async def delete_profile(self, profile_id: int) -> None:
         await self._client.request(DELETE_PROFILE_PATH, {'id': profile_id})
 
+    async def clock_pictures(self, language: str = 'en'
+                             ) -> list[ClockPicture]:
+        """The cloud catalogue; titles in English or simplified Chinese."""
+
+        header = CATALOGUE_LANGUAGES.get(language.lower(), 'en')
+        data = await self._client.request(
+            CATALOGUE_PATH, {'product_code': ProductCode.A2345.value},
+            {'Language': header})
+        categories = data
+        if isinstance(data, Mapping):
+            categories = data.get('category')
+        pictures = []
+        for category in categories if isinstance(categories, list) else ():
+            if not isinstance(category, Mapping):
+                continue
+            name = category.get('category_name')
+            items = category.get('list')
+            for item in items if isinstance(items, list) else ():
+                if not isinstance(item, Mapping):
+                    continue
+                picture = decode_picture(
+                    item, category=name if isinstance(name, str) else '')
+                if picture is not None:
+                    pictures.append(picture)
+        return pictures
+
+    async def own_pictures(self) -> list[ClockPicture]:
+        data = await self._client.request(OWN_PICTURES_PATH,
+                                          {'sn': self._serial})
+        items = data.get('list') if isinstance(data, Mapping) else data
+        pictures = []
+        for item in items if isinstance(items, list) else ():
+            if isinstance(item, Mapping):
+                picture = decode_picture(item, own=True)
+                if picture is not None:
+                    pictures.append(picture)
+        return pictures
+
+    async def upload_own_picture(self, jpeg: bytes) -> None:
+        """Upload a prepared JPEG and register it as an own picture.
+
+        As the official app: a signed upload link, a plain PUT, then the
+        registration with the link's key and the file's CRC-32.
+        """
+
+        user_id = self._client.authentication.user_id
+        ticket = await self._client.request(
+            UPLOAD_TICKET_PATH,
+            {'file_name': UPLOAD_FILE_NAME,
+             'content_type': UPLOAD_CONTENT_TYPE, 'file_size': len(jpeg),
+             'disable_ssl': False, 'type': UPLOAD_TYPE},
+            {'user_id': user_id})
+        if not isinstance(ticket, Mapping):
+            raise ProtocolError('upload ticket missing from the response')
+        url = ticket.get('uptoken')
+        key = ticket.get('key_prefix')
+        if not isinstance(url, str) or not isinstance(key, str) or not key:
+            raise ProtocolError('incomplete upload ticket')
+        await self._client.upload(url, jpeg, UPLOAD_CONTENT_TYPE)
+        await self._client.request(ADD_PICTURE_PATH, {
+            'sn': self._serial, 'img_url': key,
+            'hash_code': f'0x{zlib.crc32(jpeg):08x}'})
+
+    async def delete_own_picture(self, picture_id: int) -> None:
+        await self._client.request(DELETE_PICTURE_PATH, {'id': picture_id})
+
     async def _switch(self, path: str, key: str, enabled: bool) -> None:
         body = self._serial_body()
         body[key] = int(enabled)
@@ -203,6 +283,51 @@ def encode_profile(profile: ChargingProfile, rules: CustomModeRules,
         'has_charge_protocol': int(profile.protocols_enabled),
         'power_settings': settings,
     }
+
+
+def decode_picture(item: Mapping[str, Any], *, category: str = '',
+                   own: bool = False) -> ClockPicture | None:
+    """One catalogue or own picture; None without an id or a link."""
+
+    picture_id = flexible_int(item.get('id'))
+    url = item.get('image_url') or item.get('img_url')
+    if picture_id is None or picture_id < 0 or not isinstance(url, str):
+        return None
+    title = item.get('title') or item.get('name')
+    crc = hex_u32(item.get('file_crc32'))
+    if crc is None:
+        crc = prefixed_u32(item.get('hash_code'))
+    return ClockPicture(picture_id, url, crc or 0,
+                        title=title if isinstance(title, str) else '',
+                        category=category,
+                        text_color=hex_u32(item.get('text_color')), own=own)
+
+
+def hex_u32(value: object) -> int | None:
+    """``"0x1a2b3c4d"``, ``"1a2b3c4d"`` or a number."""
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value & 0xFFFFFFFF
+    if not isinstance(value, str):
+        return None
+    text = value.strip().lower().removeprefix('0x')
+    try:
+        return int(text, 16) & 0xFFFFFFFF
+    except ValueError:
+        return None
+
+
+def prefixed_u32(value: object) -> int | None:
+    """Hex with a ``0x`` prefix, decimal without, or a number."""
+
+    if isinstance(value, str) and not value.strip().lower().startswith('0x'):
+        try:
+            return int(value.strip()) & 0xFFFFFFFF
+        except ValueError:
+            return None
+    return hex_u32(value)
 
 
 def flexible_int(value: object) -> int | None:

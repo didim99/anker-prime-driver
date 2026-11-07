@@ -5,12 +5,11 @@ from collections.abc import AsyncIterator
 import pytest
 
 from ankerprime.device.a2345 import A2345Device
-from ankerprime.interfaces.account import ChargerAccount
 from ankerprime.model import (
-    A2345, AccountSettings, ChargingMode, ChargingProfile,
-    CustomModeRules, CustomPortLimit, CustomProtocol,
-    DeviceInfo, InvalidParameterError, OutputId, ProtocolError)
+    A2345, ChargingMode, ChargingProfile, CustomModeRules, CustomPortLimit,
+    CustomProtocol, DeviceInfo, InvalidParameterError, OutputId, ProtocolError)
 from ankerprime.protocol.a2345.settings import PortProtocol
+from tests.device.account import FakeAccount
 from tests.device.charger import FakeChannel, charger_responder
 from tests.device.test_a2345_device import TIMINGS, connected
 from tests.utils import wait_until
@@ -25,89 +24,6 @@ DEVICE_IDENTIFICATION = 0x0223
 def rules() -> CustomModeRules:
     assert A2345.custom_mode is not None
     return A2345.custom_mode
-
-
-class FakeAccount(ChargerAccount):
-    """Account-side settings in memory; records every call."""
-
-    _mainland: bool
-    _settings: AccountSettings
-    _profiles: dict[int, ChargingProfile]
-    _next_id: int
-    _calls: list[tuple[str, object]]
-    _failure: Exception | None
-
-    def __init__(self, *, mainland: bool = False):
-        self._mainland = mainland
-        self._settings = AccountSettings(custom_mode_enabled=True,
-                                         max_compatibility=False,
-                                         device_identification=True)
-        self._profiles = {}
-        self._next_id = 10
-        self._calls = []
-        self._failure = None
-
-    @property
-    def calls(self) -> list[tuple[str, object]]:
-        return self._calls
-
-    def fail_with(self, error: Exception | None) -> None:
-        self._failure = error
-
-    def store(self, profile: ChargingProfile) -> ChargingProfile:
-        self._next_id += 1
-        stored = profile.replace(profile_id=self._next_id)
-        self._profiles[self._next_id] = stored
-        return stored
-
-    @property
-    def mainland(self) -> bool:
-        return self._mainland
-
-    async def settings(self) -> AccountSettings:
-        self._check()
-        return self._settings
-
-    async def set_custom_mode_enabled(self, enabled: bool) -> None:
-        self._record('custom_mode', enabled)
-        self._settings = self._settings.replace(custom_mode_enabled=enabled)
-
-    async def set_max_compatibility(self, enabled: bool) -> None:
-        self._record('max_compatibility', enabled)
-        self._settings = self._settings.replace(max_compatibility=enabled)
-
-    async def set_device_identification(self, enabled: bool) -> None:
-        self._record('device_identification', enabled)
-        self._settings = self._settings.replace(
-            device_identification=enabled)
-
-    async def profiles(self) -> list[ChargingProfile]:
-        self._check()
-        return sorted(self._profiles.values(),
-                      key=lambda profile: profile.number)
-
-    async def add_profile(self, profile: ChargingProfile,
-                          rules: CustomModeRules) -> None:
-        self._record('add', profile)
-        self.store(profile)
-
-    async def update_profile(self, profile: ChargingProfile,
-                             rules: CustomModeRules) -> None:
-        self._record('update', profile)
-        assert profile.profile_id in self._profiles
-        self._profiles[profile.profile_id] = profile
-
-    async def delete_profile(self, profile_id: int) -> None:
-        self._record('delete', profile_id)
-        del self._profiles[profile_id]
-
-    def _record(self, name: str, value: object) -> None:
-        self._check()
-        self._calls.append((name, value))
-
-    def _check(self) -> None:
-        if self._failure is not None:
-            raise self._failure
 
 
 @pytest.fixture

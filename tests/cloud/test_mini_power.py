@@ -1,16 +1,18 @@
 """Account-side charger settings and custom profiles (``mini_power``)."""
 
+import zlib
 from datetime import UTC, datetime
 
 import pytest
 
 from ankerprime.cloud.client import CloudClient
 from ankerprime.cloud.mini_power import (
-    MiniPowerClient, decode_profile, flexible_bool, flexible_int)
+    MiniPowerClient, decode_picture, decode_profile,
+    flexible_bool, flexible_int, hex_u32, prefixed_u32)
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
-    A2345, CustomModeRules, CustomPortLimit,
-    CustomProtocol, OutputId, ProtocolError)
+    A2345, ChargerConnectionError, CustomModeRules,
+    CustomPortLimit, CustomProtocol, OutputId, ProtocolError)
 from tests.cloud.fakes import (
     FakeHttpClient, FakeMiniPower, Request, json_response)
 from tests.utils import make_authentication
@@ -170,3 +172,101 @@ def test_flexible_bool() -> None:
     assert flexible_bool('1') is True
     assert flexible_bool(0) is False
     assert flexible_bool(None) is None
+
+
+async def test_clock_picture_catalogue() -> None:
+    server = FakeMiniPower()
+    client, http = make_client(server)
+    pictures = await client.clock_pictures('zh')
+    request = http.requests[0]
+    assert request.json() == {'product_code': 'A2345'}
+    assert request.headers['Language'] == 'zh-Hans'
+    assert [picture.picture_id for picture in pictures] == [31, 32, 34]
+    forest, sea, night = pictures
+    assert forest.title == 'Forest' and forest.category == 'Nature'
+    assert forest.crc32 == 0x1A2B3C4D and forest.text_color == 0xFF00FF00
+    assert sea.title == 'Sea' and sea.image_url == 'https://cdn/sea.jpg'
+    assert sea.crc32 == 0xBEEF and sea.text_color is None
+    assert night.crc32 == 12345 and night.category == 'City'
+    assert not forest.own
+    await client.clock_pictures('fr')
+    assert http.requests[1].headers['Language'] == 'en'
+
+
+async def test_own_picture_upload_list_delete() -> None:
+    server = FakeMiniPower()
+    client, http = make_client(server)
+    jpeg = b'\xff\xd8\xff' + b'picture' * 10
+    await client.upload_own_picture(jpeg)
+    ticket = http.requests[0]
+    assert ticket.path == '/app/cloudstor/get_app_up_token_general'
+    assert ticket.headers['user_id'] == 'u' * 40
+    assert ticket.json() == {'file_name': 'cropped_image.jpg',
+                             'content_type': 'binary/octet-stream',
+                             'file_size': len(jpeg), 'disable_ssl': False,
+                             'type': 106}
+    upload = http.requests[1]
+    assert upload.method == 'PUT' and upload.body == jpeg
+    assert upload.headers['content-type'] == 'binary/octet-stream'
+    assert upload.headers['content-length'] == str(len(jpeg))
+    name, body = server.calls[-1]
+    assert name == 'add_manual_clock_screensavers'
+    assert body == {'sn': SERIAL, 'img_url': 'pictures/key1',
+                    'hash_code': f'0x{zlib.crc32(jpeg):08x}'}
+
+    own = await client.own_pictures()
+    assert len(own) == 1
+    picture = own[0]
+    assert picture.own and picture.crc32 == zlib.crc32(jpeg)
+    assert picture.image_url.startswith('https://own/pictures/key1')
+    await client.delete_own_picture(picture.picture_id)
+    assert await client.own_pictures() == []
+
+
+async def test_upload_link_must_be_https() -> None:
+    def handler(request: Request) -> HttpResponse:
+        return json_response({'code': 0, 'data': {
+            'uptoken': 'http://plain/upload', 'key_prefix': 'k'}})
+
+    http = FakeHttpClient(handler)
+    client = MiniPowerClient(
+        CloudClient(http, make_authentication('u' * 40), lambda: NOW), SERIAL)
+    with pytest.raises(ProtocolError, match='HTTPS'):
+        await client.upload_own_picture(b'\xff\xd8\xff')
+    assert len(http.requests) == 1
+
+
+async def test_failed_upload_stops_before_registering() -> None:
+    def handler(request: Request) -> HttpResponse:
+        if request.method == 'PUT':
+            return HttpResponse(403, b'')
+        return json_response({'code': 0, 'data': {
+            'uptoken': 'https://upload/x', 'key_prefix': 'k'}})
+
+    http = FakeHttpClient(handler)
+    client = MiniPowerClient(
+        CloudClient(http, make_authentication('u' * 40), lambda: NOW), SERIAL)
+    with pytest.raises(ChargerConnectionError, match='403'):
+        await client.upload_own_picture(b'\xff\xd8\xff')
+    assert len(http.requests) == 2
+
+
+@pytest.mark.parametrize('value, expected', [
+    ('0x1A', 0x1A), ('1a', 0x1A), (26, 26), ('zz', None), (True, None),
+])
+def test_hex_u32(value: object, expected: int | None) -> None:
+    assert hex_u32(value) == expected
+
+
+@pytest.mark.parametrize('value, expected', [
+    ('0x10', 16), ('10', 10), (7, 7), ('x', None), (None, None),
+])
+def test_prefixed_u32(value: object, expected: int | None) -> None:
+    assert prefixed_u32(value) == expected
+
+
+def test_decode_picture_needs_id_and_link() -> None:
+    assert decode_picture({'image_url': 'https://x'}) is None
+    assert decode_picture({'id': 1}) is None
+    picture = decode_picture({'id': 1, 'img_url': 'https://x'}, own=True)
+    assert picture is not None and picture.own and picture.crc32 == 0

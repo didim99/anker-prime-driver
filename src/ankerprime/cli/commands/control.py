@@ -43,13 +43,8 @@ class ControlCommand(ChargerCommand):
 
     async def run_charger(self, context: CliContext, charger: Charger,
                           args: argparse.Namespace) -> int:
-        painter = context.painter
         for capability, message in await self.apply(charger, args):
-            context.print(painter.good(message))
-            verification = charger.state.capabilities.get(capability)
-            if verification == Verification.EXPERIMENTAL:
-                note = EXPERIMENTAL_NOTE.format(capability=capability)
-                context.print(painter.warn(note))
+            confirm(context, charger, capability, message)
         return 0
 
     @abstractmethod
@@ -303,6 +298,18 @@ class SwitchCommand(ControlCommand):
     def add_charger_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument('name', choices=sorted(SWITCHES))
         parser.add_argument('on', type=parse_switch, help='on or off')
+
+
+def confirm(context: CliContext, charger: Charger, capability: Capability,
+            message: str) -> None:
+    """Print a confirmation, and a reminder for unverified capabilities."""
+
+    painter = context.painter
+    context.print(painter.good(message))
+    verification = charger.state.capabilities.get(capability)
+    if verification == Verification.EXPERIMENTAL:
+        note = EXPERIMENTAL_NOTE.format(capability=capability)
+        context.print(painter.warn(note))
 
 
 def _choices(enum: type[StrEnum]) -> str:

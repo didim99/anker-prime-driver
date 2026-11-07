@@ -38,3 +38,13 @@ async def test_network_failure_raises_connection_error() -> None:
         client = AiohttpClient(session, timeout=2)
         with pytest.raises(ChargerConnectionError):
             await client.post('http://127.0.0.1:9/', {}, b'')
+
+
+async def test_put_sends_the_body() -> None:
+    app = web.Application()
+    app.router.add_put('/upload', echo)
+    async with TestServer(app) as server, aiohttp.ClientSession() as session:
+        client = AiohttpClient(session)
+        response = await client.put(str(server.make_url('/upload')),
+                                    {'x-test': '1'}, b'\xff\xd8jpeg')
+        assert (response.status, response.body) == (201, b'\xff\xd8jpeg')

@@ -9,6 +9,7 @@ from ankerprime.model.errors import ChargerConnectionError
 
 
 DEFAULT_TIMEOUT = 30
+UPLOAD_TIMEOUT = 120
 
 
 class AiohttpClient(HttpClient):
@@ -28,10 +29,21 @@ class AiohttpClient(HttpClient):
 
     async def post(self, url: str, headers: Mapping[str, str],
                    body: bytes) -> HttpResponse:
+        return await self._send('POST', url, headers, body, self._timeout)
+
+    async def put(self, url: str, headers: Mapping[str, str],
+                  body: bytes) -> HttpResponse:
+        timeout = aiohttp.ClientTimeout(total=max(self._timeout.total or 0,
+                                                  UPLOAD_TIMEOUT))
+        return await self._send('PUT', url, headers, body, timeout)
+
+    async def _send(self, method: str, url: str, headers: Mapping[str, str],
+                    body: bytes, timeout: aiohttp.ClientTimeout
+                    ) -> HttpResponse:
         try:
-            async with self._session.post(url, headers=dict(headers),
-                                          data=body, allow_redirects=False,
-                                          timeout=self._timeout) as response:
+            async with self._session.request(
+                    method, url, headers=dict(headers), data=body,
+                    allow_redirects=False, timeout=timeout) as response:
                 return HttpResponse(response.status, await response.read())
         except (aiohttp.ClientError, TimeoutError) as error:
             message = f'Anker cloud request failed: {error}'

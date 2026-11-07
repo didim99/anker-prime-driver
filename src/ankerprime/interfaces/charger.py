@@ -16,6 +16,7 @@ from ankerprime.model.enums import (
     FixedAllocation, HourFormat, KnobDirection, OutputId,
     PortId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import AnkerPrimeError
+from ankerprime.model.pictures import ClockPicture
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
 
@@ -230,5 +231,48 @@ class Charger(ABC):
     @abstractmethod
     async def reload_custom_profiles(self) -> None:
         """Read the account's settings and profiles into the state again."""
+
+        pass
+
+    @abstractmethod
+    async def clock_pictures(self, language: str = 'en'
+                             ) -> tuple[ClockPicture, ...]:
+        """The cloud catalogue of clock pictures; ``language`` ``en`` or ``zh``."""
+
+        pass
+
+    @abstractmethod
+    async def own_clock_pictures(self) -> tuple[ClockPicture, ...]:
+        """The account's own clock pictures (at most eight)."""
+
+        pass
+
+    @abstractmethod
+    async def apply_clock_picture(self, picture: ClockPicture) -> None:
+        """Show a picture behind the clock and switch the clock on.
+
+        The charger downloads the picture itself; this returns once it
+        reports the download finished and raises ``PictureTransferError``
+        when it failed, ``ChargerTimeoutError`` without a report. An own
+        picture is looked up again first for a freshly signed link.
+        """
+
+        pass
+
+    @abstractmethod
+    async def upload_clock_picture(self, jpeg: bytes) -> None:
+        """Store a prepared JPEG (``ankerprime.pictures``) as an own picture."""
+
+        pass
+
+    @abstractmethod
+    async def delete_clock_picture(self, picture_id: int) -> None:
+        """Remove an own picture from the account."""
+
+        pass
+
+    @abstractmethod
+    async def set_picture_time(self, enabled: bool) -> None:
+        """Show the time over own pictures."""
 
         pass

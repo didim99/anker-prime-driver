@@ -12,6 +12,8 @@ as a test tool for real chargers.
 - [Reading](#reading): `status`, `monitor`
 - [Control](#control): `output`, `countdown`, `schedule`, `mode`, `priority`,
   `allocation`, `display`, `clock`, `clock-schedule`, `holiday`, `switch`
+- [Clock pictures](#clock-pictures-250w): `clock-picture`
+- [Custom charging mode](#custom-charging-mode-250w): `labs`, `custom-mode`
 - [Energy counters](#energy-counters): `energy-reset`
 - [Exit codes](#exit-codes)
 
@@ -234,6 +236,38 @@ ankerprime switch ufcs on
 On the 250W, `switch max-compatibility` and `switch device-identification`
 exclude each other: switching one on first switches the other off. Both are
 also stored in the Anker account, as the official app does.
+
+## Clock pictures (250W)
+
+Besides its three built-in styles, the clock screensaver can show a picture:
+one of the Anker cloud catalogue, or one of up to eight own pictures kept in
+the Anker account (shared with the Anker app). The charger downloads a picture
+itself over Wi-Fi; applying one waits up to 45 s for its download report and
+switches the clock on. `clock on|off` keeps the picture shown.
+
+### `clock-picture [ACTION]`
+
+| Action           | Arguments                     | Meaning                                                                                                     |
+|------------------|-------------------------------|-------------------------------------------------------------------------------------------------------------|
+| `list` (default) | `[--own] [--language en\|zh]` | the catalogue (ID, title, category), or the own pictures; `*` marks the one shown                           |
+| `apply`          | `ID [--own]`                  | show a catalogue picture, or an own one                                                                     |
+| `upload`         | `FILE`                        | add an own picture from any image file; it is cropped to fill 480×200 and saved as a JPEG of about 77–96 KB |
+| `delete`         | `ID`                          | remove an own picture                                                                                       |
+| `time`           | `on\|off`                     | show the time over own pictures                                                                             |
+
+`upload` needs Pillow: `pip install "anker-prime-driver[pictures]"`. Own
+pictures need firmware that offers them; the catalogue needs firmware with
+picture themes. A charger that asks for the picture over Bluetooth cannot be
+served by this tool.
+
+```bash
+ankerprime clock-picture list --language zh
+ankerprime clock-picture apply 31
+ankerprime clock-picture upload ~/Pictures/beach.jpg
+ankerprime clock-picture list --own
+ankerprime clock-picture apply --own 101
+ankerprime clock-picture time off
+```
 
 ## Custom charging mode (250W)
 
