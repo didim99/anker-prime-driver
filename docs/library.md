@@ -152,6 +152,7 @@ Dependencies point downwards. Layers meet at the abstract interfaces in
 | one method per capability  | `set_output`, `start_countdown`, `set_charging_mode`, `set_brightness`, …                                                                                                 |
 | custom mode                | `apply_custom_profile`, `exit_custom_mode`; with stored profiles also `save_custom_profile`, `delete_custom_profile`, `reload_custom_profiles`, `set_custom_mode_enabled` |
 | clock pictures             | `clock_pictures`, `own_clock_pictures`, `apply_clock_picture`, `upload_clock_picture`, `delete_clock_picture`, `set_picture_time`                                         |
+| screen picture (160W)      | `upload_screen_picture`, `select_screen_picture`                                                                                                                          |
 
 Listeners run on the event loop and must not block; an exception in one is
 logged and does not affect others. States are immutable and published only
@@ -261,7 +262,8 @@ the time over them. `state.settings.clock` has the shown `picture_id` and
 
 `ankerprime.pictures.prepare_picture(data)` turns any image file into the
 JPEG the charger expects (480×200, center crop on black, quality searched for
-the official app's size window); it needs the `[pictures]` extra (Pillow).
+the official app's size window; `SCREEN_PICTURE` for the 160W: 240×240,
+quality 85); it needs the `[pictures]` extra (Pillow).
 
 ```python
 from ankerprime.pictures import prepare_picture
@@ -292,6 +294,23 @@ Two modes:
 
 Timings are adjustable with `A2687Timings`. The 160W support has not been
 run against a real charger by this project.
+
+Custom mode on the 160W takes C1–C3 limits (`product.custom_mode`: 0 or
+15–140 W, at most 160 W, profile number 1, no protocols or names):
+`apply_custom_profile(rules.template(1, '').with_port(...))`. The read-back
+after the write shows in `settings.charging_mode` whether the charger took it.
+`exit_custom_mode()` switches to AI mode, as auto exit does.
+
+`upload_screen_picture(jpeg, acknowledge_irreversible=True)` writes a
+240×240 JPEG (`prepare_picture(data, SCREEN_PICTURE)`) to the screen and
+shows it. **It cannot be undone**: no Bluetooth command erases the picture,
+so the call refuses to run unless the caller confirms the user was told.
+Polling pauses during the transfer; slices are paced as the firmware
+requires. The result (`ScreenPictureUpload`) has the minted id and CRC-32 and
+`witnessed`: whether the screen was seen to change (`E1` before and after,
+also `display.screen_picture` in the state). On failure,
+`PictureTransferError.pixels_written` tells whether data reached the charger;
+`select_screen_picture(id, crc32)` shows a stored picture again.
 
 ## Energy counters
 

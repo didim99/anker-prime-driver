@@ -16,7 +16,7 @@ from ankerprime.model.enums import (
     FixedAllocation, HourFormat, KnobDirection, OutputId,
     PortId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import AnkerPrimeError
-from ankerprime.model.pictures import ClockPicture
+from ankerprime.model.pictures import ClockPicture, ScreenPictureUpload
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
 
@@ -274,5 +274,28 @@ class Charger(ABC):
     @abstractmethod
     async def set_picture_time(self, enabled: bool) -> None:
         """Show the time over own pictures."""
+
+        pass
+
+    @abstractmethod
+    async def upload_screen_picture(self, jpeg: bytes, *,
+                                    acknowledge_irreversible: bool
+                                    ) -> ScreenPictureUpload:
+        """Write a prepared JPEG to the charger's screen (160W) and show it.
+
+        **Cannot be undone**: the picture stays in the charger's storage, and
+        no Bluetooth command erases it (the charger keeps four; a fifth
+        evicts the oldest). ``acknowledge_irreversible`` must be True: the
+        caller confirms the user was told so. Returns once the charger
+        reports the picture shown; ``PictureTransferError.pixels_written``
+        tells whether a failure left data behind.
+        """
+
+        pass
+
+    @abstractmethod
+    async def select_screen_picture(self, picture_id: int, crc32: int
+                                    ) -> None:
+        """Show a picture already stored on the charger (160W); reversible."""
 
         pass

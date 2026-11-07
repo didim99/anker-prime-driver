@@ -52,13 +52,15 @@ def parse_port_protocols(text: str
 
 
 class CustomModeCommand(ChargerCommand):
-    """Lists, edits and applies custom profiles.
+    """Lists, edits and applies custom profiles; sets limits directly.
 
-    Profiles live in the Anker account; ``apply`` writes one to the charger.
+    The 250W keeps profiles in the Anker account; ``apply`` writes one to
+    the charger. ``set`` applies limits without storing them, the only way
+    on the 160W.
     """
 
     NAME = 'custom-mode'
-    HELP = 'manage and apply custom charging profiles (250W)'
+    HELP = 'custom charging mode: profiles (250W) or limits (both)'
 
     async def run_charger(self, context: CliContext, charger: Charger,
                           args: argparse.Namespace) -> int:
@@ -66,7 +68,23 @@ class CustomModeCommand(ChargerCommand):
         if action == 'exit':
             await charger.exit_custom_mode()
             confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
-                          'Custom mode left.')
+                    'Custom mode left.')
+            return 0
+        if action == 'set':
+            rules = _rules(charger)
+            profile = apply_options(rules.template(args.number, 'Custom'),
+                                    args)
+            await charger.apply_custom_profile(profile)
+            limits = ', '.join(f'{_port_label(rule.output)} '
+                               f'{profile.watts(rule.output)} W'
+                               for rule in rules.ports)
+            confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
+                    f'Custom mode set: {limits}.')
+            return 0
+        if action == 'list' and not charger.supports(
+                Capability.CUSTOM_PROFILES):
+            context.print('This charger keeps no profiles; set limits with '
+                          '"ankerprime custom-mode set --c1 W ...".')
             return 0
         await charger.reload_custom_profiles()
         match action:
@@ -81,14 +99,13 @@ class CustomModeCommand(ChargerCommand):
                 _stored(charger, args.number)
                 await charger.delete_custom_profile(args.number)
                 confirm(context, charger, Capability.CUSTOM_PROFILES,
-                              f'Profile {args.number} deleted.')
+                        f'Profile {args.number} deleted.')
             case 'apply':
                 profile = _stored(charger, args.number)
                 await charger.apply_custom_profile(profile)
-                confirm(context, charger,
-                              Capability.CUSTOM_CHARGING_MODE,
-                              f'Profile {profile.number} "{profile.name}" '
-                              f'applied.')
+                confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
+                        f'Profile {profile.number} "{profile.name}" '
+                        'applied.')
         return 0
 
     def add_charger_arguments(self, parser: argparse.ArgumentParser) -> None:
@@ -110,6 +127,13 @@ class CustomModeCommand(ChargerCommand):
         apply = actions.add_parser('apply',
                                    help='switch to custom mode with a profile')
         apply.add_argument('number', type=int)
+        limits = actions.add_parser(
+            'set', help='switch to custom mode with these limits, unstored '
+                        '(defaults: the Anker app\'s)')
+        limits.add_argument('--number', type=int, default=1,
+                            help='profile number shown by the charger '
+                                 '(250W: 1-4; default 1)')
+        _profile_options(limits)
         actions.add_parser('exit', help='leave custom mode')
 
     async def _save(self, context: CliContext, charger: Charger,
@@ -134,7 +158,6 @@ class CustomModeCommand(ChargerCommand):
         if charger.state.settings.active_profile == args.number:
             message += ' It is in use; the charger has the new limits.'
         confirm(context, charger, Capability.CUSTOM_PROFILES, message)
-
 
 
 class LabsCommand(ChargerCommand):

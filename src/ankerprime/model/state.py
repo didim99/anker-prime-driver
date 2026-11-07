@@ -304,6 +304,7 @@ class DisplaySettings:
     _language: DisplayLanguage | None
     _knob_direction: KnobDirection | None
     _hour_format: HourFormat | None
+    _screen_picture: int | None
 
     def __init__(self, *, brightness: int | None = None,
                  screen_timeout: ScreenTimeout | None = None,
@@ -311,7 +312,8 @@ class DisplaySettings:
                  auto_rotation: bool | None = None,
                  language: DisplayLanguage | None = None,
                  knob_direction: KnobDirection | None = None,
-                 hour_format: HourFormat | None = None):
+                 hour_format: HourFormat | None = None,
+                 screen_picture: int | None = None):
         self._brightness = brightness
         self._screen_timeout = screen_timeout
         self._orientation = orientation
@@ -319,6 +321,7 @@ class DisplaySettings:
         self._language = language
         self._knob_direction = knob_direction
         self._hour_format = hour_format
+        self._screen_picture = screen_picture
 
     @property
     def brightness(self) -> int | None:
@@ -349,6 +352,12 @@ class DisplaySettings:
     @property
     def hour_format(self) -> HourFormat | None:
         return self._hour_format
+
+    @property
+    def screen_picture(self) -> int | None:
+        """Screen picture shown (160W): low 16 bits of its id."""
+
+        return self._screen_picture
 
 
 @dataclass(init=False)

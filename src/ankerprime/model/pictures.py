@@ -1,4 +1,4 @@
-"""Clock pictures of the 250W: the cloud catalogue and the user's own."""
+"""Pictures: the 250W's clock pictures and the 160W's screen picture."""
 
 from __future__ import annotations
 
@@ -76,3 +76,57 @@ class ClockPicture:
     @property
     def theme(self) -> ClockTheme:
         return ClockTheme.CUSTOM if self._own else ClockTheme.PICTURE
+
+
+@dataclass(init=False)
+class ScreenPictureUpload:
+    """Result of putting a picture on the 160W's screen.
+
+    ``witnessed`` is True when the screen showed another picture before and
+    this one after; False when nothing could tell the two apart (the same
+    picture was shown already, or the previous one could not be read).
+    """
+
+    _picture_id: int
+    _crc32: int
+    _byte_count: int
+    _chunk_count: int
+    _previous: int | None
+    _witnessed: bool
+
+    def __init__(self, picture_id: int, crc32: int, *, byte_count: int,
+                 chunk_count: int, previous: int | None, witnessed: bool):
+        self._picture_id = picture_id
+        self._crc32 = crc32
+        self._byte_count = byte_count
+        self._chunk_count = chunk_count
+        self._previous = previous
+        self._witnessed = witnessed
+
+    @property
+    def picture_id(self) -> int:
+        return self._picture_id
+
+    @property
+    def crc32(self) -> int:
+        """Needed with the id to show this picture again."""
+
+        return self._crc32
+
+    @property
+    def byte_count(self) -> int:
+        return self._byte_count
+
+    @property
+    def chunk_count(self) -> int:
+        return self._chunk_count
+
+    @property
+    def previous(self) -> int | None:
+        """Low 16 bits of the picture shown before, when it could be read."""
+
+        return self._previous
+
+    @property
+    def witnessed(self) -> bool:
+        return self._witnessed

@@ -13,7 +13,8 @@ as a test tool for real chargers.
 - [Control](#control): `output`, `countdown`, `schedule`, `mode`, `priority`,
   `allocation`, `display`, `clock`, `clock-schedule`, `holiday`, `switch`
 - [Clock pictures](#clock-pictures-250w): `clock-picture`
-- [Custom charging mode](#custom-charging-mode-250w): `labs`, `custom-mode`
+- [Screen picture](#screen-picture-160w): `screen-picture`
+- [Custom charging mode](#custom-charging-mode): `labs`, `custom-mode`
 - [Energy counters](#energy-counters): `energy-reset`
 - [Exit codes](#exit-codes)
 
@@ -63,7 +64,9 @@ Every command that works on a charger (reading, control) accepts:
 | `--country CC`         | 160W only: account country code sent to the charger   |
 | `--timeout SECONDS`    | how long to wait for the charger's state (default 30) |
 
-`-c`, `--serial` and `--ble` exclude each other. Without any of them the
+`-c`, `--serial` and `--ble` exclude each other. Commands with an action
+(`custom-mode`, `clock-picture`, `screen-picture`) take them before the
+action: `ankerprime custom-mode -c desk list`. Without any of them the
 default charger is used (`charger default`); without a default, the account's
 only cloud charger. With several cloud chargers and no default, the command
 lists their serials and asks for one.
@@ -269,32 +272,61 @@ ankerprime clock-picture apply --own 101
 ankerprime clock-picture time off
 ```
 
-## Custom charging mode (250W)
+## Screen picture (160W)
 
-Custom mode caps every output at a chosen power and lets each USB-C port allow
-or block single fast-charge protocols. Up to four profiles (numbers 1–4) are
-kept in the Anker account, shared with the Anker app; applying one writes its
-limits to the charger. The Anker app shows custom mode only while the
-account's custom mode setting (the app's Labs page) is on.
+The 160W's 240×240 screen can show a picture of your own, sent over
+Bluetooth. **This cannot be undone**: the picture stays in the charger's
+storage and no Bluetooth command removes it (the charger keeps four; a fifth
+replaces the oldest). The command refuses to send without `--i-understand`.
 
-### `labs [on|off]`
+### `screen-picture ACTION`
+
+| Action   | Arguments             | Meaning                                                                                               |
+|----------|-----------------------|-------------------------------------------------------------------------------------------------------|
+| `upload` | `FILE --i-understand` | crop any image file to fill 240×240, send it (JPEG, quality 85) and show it; prints its id and CRC-32 |
+| `select` | `ID CRC32`            | show a picture sent before again (reversible; CRC-32 in hex)                                          |
+
+The transfer takes a few seconds; normal polling pauses meanwhile. The picture
+shown is read before and after: a change there is the confirmation. If an
+upload fails, the command says whether part of the picture already reached the
+charger. When every slice arrived but the screen did not switch, `select` with
+the printed id and CRC-32 tries again without sending the picture twice.
+`upload` needs Pillow (`[pictures]` extra).
+
+```bash
+ankerprime screen-picture upload ~/Pictures/cat.jpg --i-understand
+ankerprime screen-picture select 71234 9c1f02ab
+```
+
+## Custom charging mode
+
+Custom mode caps every output at a chosen power. On the 250W each USB-C port
+can also allow or block single fast-charge protocols, and up to four profiles
+(numbers 1–4) are kept in the Anker account, shared with the Anker app;
+applying one writes its limits to the charger. The Anker app shows custom mode
+only while the account's custom mode setting (the app's Labs page) is on. The
+160W keeps no profiles: `custom-mode set` applies limits directly.
+
+### `labs [on|off]` (250W)
 
 Shows or switches the account's custom mode setting. Switching it off also
 leaves custom mode.
 
 ### `custom-mode [ACTION]`
 
-| Action           | Arguments                        | Meaning                                                                                                       |
-|------------------|----------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `list` (default) |                                  | stored profiles; `*` marks the one in use                                                                     |
-| `show`           | `NUMBER`                         | limits and allowed protocols per port                                                                         |
-| `add`            | `NUMBER NAME [options]`          | store a new profile, starting from the Anker app's defaults (C1 100 W, C2 65 W, C3 45 W, C4 25 W, USB-A 15 W) |
-| `edit`           | `NUMBER [--name NAME] [options]` | change a stored profile; when it is in use, the charger gets the new limits at once                           |
-| `delete`         | `NUMBER`                         | remove a stored profile; leaves custom mode first if it is in use                                             |
-| `apply`          | `NUMBER`                         | switch the charger to custom mode with that profile                                                           |
-| `exit`           |                                  | leave custom mode; the charger returns to its previous mode                                                   |
+| Action           | Arguments                        | Meaning                                                                                                                                |
+|------------------|----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `list` (default) |                                  | stored profiles (250W); `*` marks the one in use                                                                                       |
+| `show`           | `NUMBER`                         | limits and allowed protocols per port                                                                                                  |
+| `add`            | `NUMBER NAME [options]`          | store a new profile, starting from the Anker app's defaults (C1 100 W, C2 65 W, C3 45 W, C4 25 W, USB-A 15 W)                          |
+| `edit`           | `NUMBER [--name NAME] [options]` | change a stored profile; when it is in use, the charger gets the new limits at once                                                    |
+| `delete`         | `NUMBER`                         | remove a stored profile; leaves custom mode first if it is in use                                                                      |
+| `apply`          | `NUMBER`                         | switch the charger to custom mode with that profile                                                                                    |
+| `set`            | `[--number N] [options]`         | switch to custom mode with these limits without storing them, starting from the Anker app's defaults (160W: C1 60 W, C2 60 W, C3 40 W) |
+| `exit`           |                                  | leave custom mode; the 250W returns to its previous mode, the 160W to AI mode                                                          |
 
-Options of `add` and `edit`:
+`show`, `add`, `edit`, `delete` and `apply` are 250W-only. Options of `add`,
+`edit` and `set`:
 
 | Option                           | Meaning                                                                     |
 |----------------------------------|-----------------------------------------------------------------------------|
@@ -302,8 +334,10 @@ Options of `add` and `edit`:
 | `--protocols PORT=LIST`          | protocols a port allows, replacing its list (repeatable; `c1=` allows none) |
 | `--auto-exit on\|off`            | leave custom mode once every device is unplugged                            |
 
-Limits: C1 15–140 W, C2–C4 15–100 W (120 W on mainland China accounts),
-USB-A 15 or 24 W, at most 250 W in total. Protocols: `scp`, `ufcs`,
+Limits on the 250W: C1 15–140 W, C2–C4 15–100 W (120 W on mainland China
+accounts), USB-A 15 or 24 W, at most 250 W in total. On the 160W: C1–C3
+15–140 W, at most 160 W in total; no protocols, and whether the charger took
+the limits shows in the mode `status` reports afterwards. Protocols: `scp`, `ufcs`,
 `pd_12v`, `pps_11v`, `pps_16v`, `pps_21v`; mainland China accounts use
 `huawei` instead of `scp` and add `xiaomi`. A port allows at most three of PD
 12V and the PPS ranges, and on mainland accounts not both PD 12V and Xiaomi.
@@ -318,6 +352,7 @@ ankerprime custom-mode edit 1 --protocols c1=ufcs,pps_11v,pps_16v
 ankerprime custom-mode show 1
 ankerprime custom-mode apply 1
 ankerprime custom-mode exit
+ankerprime custom-mode -c lamp set --c1 100 --c2 40 --c3 0   # 160W
 ```
 
 ## Energy counters

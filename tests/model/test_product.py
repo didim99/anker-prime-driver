@@ -4,7 +4,7 @@ import pytest
 
 from ankerprime.model import (
     A2345, A2687, Capability, ChargingMode,
-    InvalidParameterError, OutputId, PortId, ProductCode,
+    InvalidParameterError, OutputId, PortId, Product, ProductCode,
     UnknownProductError, ValueRange, Verification, get_product)
 
 
@@ -45,11 +45,20 @@ def test_unknown_port_and_output_raise() -> None:
 def test_capability_lookup() -> None:
     assert A2345.verification(Capability.OUTPUT_SWITCH) == Verification.VERIFIED
     assert A2345.supports(Capability.OUTPUT_SCHEDULE)
-    assert not A2687.supports(Capability.SCREEN_PICTURE)
+    assert A2687.supports(Capability.SCREEN_PICTURE)
     assert not A2345.supports(Capability.SCREEN_ORIENTATION)
     assert A2345.verification(Capability.SCREEN_ORIENTATION) is None
     assert A2687.verification(Capability.SCREEN_BRIGHTNESS) == Verification.VERIFIED
     assert not A2687.supports(Capability.OUTPUT_SCHEDULE)
+
+
+def test_planned_capabilities_are_not_supported() -> None:
+    planned = {Capability.SCREEN_PICTURE: Verification.PLANNED}
+    product = Product(code=ProductCode.A2687, name='Test', rated_power=10,
+                      ports=(), outputs=(), capabilities=planned)
+    assert product.verification(Capability.SCREEN_PICTURE) == (
+        Verification.PLANNED)
+    assert not product.supports(Capability.SCREEN_PICTURE)
 
 
 def test_capabilities_are_read_only() -> None:

@@ -43,6 +43,17 @@ to the development history afterwards.
 - `HttpClient.put()` for signed uploads; `CloudClient.upload()`.
 - CLI: `clock-picture list|apply|upload|delete|time`; `status` shows the
   shown picture and the time setting.
+- 160W custom mode (experimental): `apply_custom_profile()` with C1–C3
+  limits (`product.custom_mode`, no names or protocols), confirmed by the
+  read-back; `exit_custom_mode()` returns to AI mode.
+- 160W screen picture (experimental): `upload_screen_picture()` writes a
+  240×240 JPEG over Bluetooth and needs `acknowledge_irreversible=True`, as
+  nothing erases it; paced slices with checkpoint answers, polling paused,
+  `E1` read before and after (`ScreenPictureUpload.witnessed`);
+  `select_screen_picture()`; `PictureTransferError.pixels_written`;
+  `display.screen_picture` in the state; `pictures.SCREEN_PICTURE`.
+- CLI: `custom-mode set` (limits without storing; the 160W's way) and
+  `screen-picture upload FILE --i-understand|select ID CRC32`.
 
 ### Changed
 - 250W: max compatibility and device identification exclude each other;

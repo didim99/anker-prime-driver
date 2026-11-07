@@ -239,6 +239,8 @@ def _settings(state: ChargerState, painter: Painter) -> str:
     if display.auto_rotation is not None:
         display_parts.append(
             'auto-rotation ' + _switch(painter, display.auto_rotation))
+    if display.screen_picture is not None:
+        display_parts.append(f'picture {display.screen_picture}')
     lines.append(_line(painter, 'Display', display_parts))
     clock = settings.clock
     if clock is not None:

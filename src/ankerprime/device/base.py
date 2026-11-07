@@ -14,7 +14,7 @@ from ankerprime.model.enums import (
     ChargingMode, ClockTheme, DisplayLanguage, FixedAllocation, HourFormat,
     KnobDirection, OutputId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import AnkerPrimeError, UnsupportedCapabilityError
-from ankerprime.model.pictures import ClockPicture
+from ankerprime.model.pictures import ClockPicture, ScreenPictureUpload
 from ankerprime.model.product import Product
 from ankerprime.model.state import ChargerState, ClockSchedule, Schedule
 
@@ -196,6 +196,18 @@ class BaseCharger(Charger):
         self._require(Capability.OWN_CLOCK_PICTURES)
         await self._set_picture_time(enabled)
 
+    async def upload_screen_picture(self, jpeg: bytes, *,
+                                    acknowledge_irreversible: bool
+                                    ) -> ScreenPictureUpload:
+        self._require(Capability.SCREEN_PICTURE)
+        return await self._upload_screen_picture(jpeg,
+                                                 acknowledge_irreversible)
+
+    async def select_screen_picture(self, picture_id: int, crc32: int
+                                    ) -> None:
+        self._require(Capability.SCREEN_PICTURE)
+        await self._select_screen_picture(picture_id, crc32)
+
     def _require(self, capability: Capability) -> None:
         if not self.supports(capability):
             raise UnsupportedCapabilityError(capability)
@@ -313,3 +325,12 @@ class BaseCharger(Charger):
 
     async def _set_picture_time(self, enabled: bool) -> None:
         raise UnsupportedCapabilityError(Capability.OWN_CLOCK_PICTURES)
+
+    async def _upload_screen_picture(self, jpeg: bytes,
+                                     acknowledge_irreversible: bool
+                                     ) -> ScreenPictureUpload:
+        raise UnsupportedCapabilityError(Capability.SCREEN_PICTURE)
+
+    async def _select_screen_picture(self, picture_id: int, crc32: int
+                                     ) -> None:
+        raise UnsupportedCapabilityError(Capability.SCREEN_PICTURE)

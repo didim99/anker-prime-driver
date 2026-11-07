@@ -8,7 +8,8 @@ from PIL import Image
 
 from ankerprime.model import InvalidParameterError
 from ankerprime.pictures import (
-    CLOCK_PICTURE, PictureFormat, PicturesUnavailableError, prepare_picture)
+    CLOCK_PICTURE, SCREEN_PICTURE, PictureFormat,
+    PicturesUnavailableError, prepare_picture)
 
 
 def image_file(width: int, height: int, *, noisy: bool = True) -> bytes:
@@ -73,3 +74,10 @@ def test_without_pillow(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, 'PIL', None)
     with pytest.raises(PicturesUnavailableError, match='pictures'):
         prepare_picture(data)
+
+
+def test_screen_picture_has_a_fixed_quality() -> None:
+    jpeg = prepare_picture(image_file(800, 600), SCREEN_PICTURE)
+    image = decoded(jpeg)
+    assert image.size == (240, 240) and image.format == 'JPEG'
+    assert SCREEN_PICTURE.quality == 85

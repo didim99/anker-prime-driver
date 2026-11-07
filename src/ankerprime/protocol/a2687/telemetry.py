@@ -22,7 +22,7 @@ from typing import ClassVar, Self, TypeVar
 from ankerprime.model.enums import PortId
 from ankerprime.protocol.a2687.codes import (
     CONTROL_FIELDS, FIELD_BRIGHTNESS, FIELD_CHARGING_MODE,
-    FIELD_CONNECTED_DEVICES, FIELD_GYROSCOPE,
+    FIELD_CONNECTED_DEVICES, FIELD_COVER_STATE, FIELD_GYROSCOPE,
     FIELD_ORIENTATION, FIELD_SCREEN_TIMEOUT, PORT_FIELDS, PORTS)
 from ankerprime.protocol.a2687.tlv import (
     TYPE_BYTES, TYPE_U8, Payload, TypedValue)
@@ -34,7 +34,7 @@ MAX_SCREEN_TIMEOUT = 4
 MAX_BRIGHTNESS = 100
 MAX_ORIENTATION = 3
 SETTING_FIELDS = (FIELD_SCREEN_TIMEOUT, FIELD_BRIGHTNESS, FIELD_CHARGING_MODE,
-                  FIELD_ORIENTATION, FIELD_GYROSCOPE)
+                  FIELD_ORIENTATION, FIELD_GYROSCOPE, FIELD_COVER_STATE)
 
 
 @dataclass(init=False)
@@ -198,17 +198,20 @@ class DeviceSettings:
     _charging_mode: int | None
     _orientation: int | None
     _auto_rotation: bool | None
+    _screen_picture: int | None
 
     def __init__(self, *, screen_timeout: int | None = None,
                  brightness: int | None = None,
                  charging_mode: int | None = None,
                  orientation: int | None = None,
-                 auto_rotation: bool | None = None):
+                 auto_rotation: bool | None = None,
+                 screen_picture: int | None = None):
         self._screen_timeout = screen_timeout
         self._brightness = brightness
         self._charging_mode = charging_mode
         self._orientation = orientation
         self._auto_rotation = auto_rotation
+        self._screen_picture = screen_picture
 
     @property
     def screen_timeout(self) -> int | None:
@@ -231,6 +234,12 @@ class DeviceSettings:
     @property
     def auto_rotation(self) -> bool | None:
         return self._auto_rotation
+
+    @property
+    def screen_picture(self) -> int | None:
+        """Low 16 bits of the id of the screen picture shown (``E1``)."""
+
+        return self._screen_picture
 
 
 @dataclass(init=False)
@@ -325,7 +334,17 @@ def _settings(payload: Payload) -> DeviceSettings | None:
         screen_timeout=timeout, brightness=brightness,
         charging_mode=_setting_byte(payload, FIELD_CHARGING_MODE),
         orientation=orientation,
-        auto_rotation=None if rotation is None else rotation == 1)
+        auto_rotation=None if rotation is None else rotation == 1,
+        screen_picture=_screen_picture(payload))
+
+
+def _screen_picture(payload: Payload) -> int | None:
+    """``E1``: bytes 2-3 of a ten-byte block are the picture shown."""
+
+    value = payload.typed(FIELD_COVER_STATE)
+    if value is None or len(value.body) < 4:
+        return None
+    return _u16(value.body, 2)
 
 
 def _setting_byte(payload: Payload, field: int,

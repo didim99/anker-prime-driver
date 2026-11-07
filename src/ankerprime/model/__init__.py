@@ -14,7 +14,7 @@ from ankerprime.model.errors import (
     ChargerConnectionError, ChargerTimeoutError, InvalidParameterError,
     PictureTransferError, ProtocolError, UnknownProductError,
     UnsupportedCapabilityError, WriteRejectedError)
-from ankerprime.model.pictures import ClockPicture
+from ankerprime.model.pictures import ClockPicture, ScreenPictureUpload
 from ankerprime.model.product import (
     A2345, A2687, PRODUCTS, OutputSpec,
     PortSpec, Product, ValueRange, get_product)
@@ -71,6 +71,7 @@ __all__ = [
     'Schedule',
     'ScheduleSlot',
     'ScreenOrientation',
+    'ScreenPictureUpload',
     'ScreenTimeout',
     'UnknownProductError',
     'UnsupportedCapabilityError',

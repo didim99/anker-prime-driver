@@ -178,8 +178,20 @@ def typed_u8(value: int) -> bytes:
     return bytes((TYPE_U8, value & 0xFF))
 
 
+def typed_u16(value: int) -> bytes:
+    return bytes((TYPE_U16,)) + (value & 0xFFFF).to_bytes(2, 'little')
+
+
+def typed_u32(value: int) -> bytes:
+    return bytes((TYPE_U32,)) + (value & 0xFFFFFFFF).to_bytes(4, 'little')
+
+
 def typed_bytes(value: bytes) -> bytes:
     return bytes((TYPE_BYTES,)) + value
+
+
+def typed_text(value: str) -> bytes:
+    return bytes((TYPE_TEXT,)) + value.encode('utf-8')
 
 
 def _try_decode(data: bytes, offset: int) -> list[Tlv] | None:

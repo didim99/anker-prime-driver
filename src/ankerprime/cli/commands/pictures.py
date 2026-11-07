@@ -1,4 +1,4 @@
-"""Clock pictures of the 250W: catalogue, own pictures, time overlay."""
+"""Pictures: the 250W's clock pictures and the 160W's screen picture."""
 
 import argparse
 import asyncio
@@ -12,12 +12,15 @@ from ankerprime.cli.style import Painter
 from ankerprime.interfaces.charger import Charger
 from ankerprime.model.capabilities import Capability
 from ankerprime.model.enums import ClockTheme
-from ankerprime.model.errors import InvalidParameterError
+from ankerprime.model.errors import (
+    InvalidParameterError, PictureTransferError)
 from ankerprime.model.pictures import ClockPicture
-from ankerprime.pictures import CLOCK_PICTURE, prepare_picture
+from ankerprime.pictures import CLOCK_PICTURE, SCREEN_PICTURE, prepare_picture
 
 
 LANGUAGES = ('en', 'zh')
+IRREVERSIBLE = ('The picture stays in the charger: no Bluetooth command '
+                'removes it (it keeps four; a fifth replaces the oldest).')
 
 
 class ClockPictureCommand(ChargerCommand):
@@ -88,6 +91,60 @@ class ClockPictureCommand(ChargerCommand):
         time.add_argument('on', type=parse_switch, help='on or off')
 
 
+class ScreenPictureCommand(ChargerCommand):
+    """Writes a picture to the 160W's own screen, or shows a stored one."""
+
+    NAME = 'screen-picture'
+    HELP = "put a picture on the charger's screen (160W; cannot be undone)"
+
+    async def run_charger(self, context: CliContext, charger: Charger,
+                          args: argparse.Namespace) -> int:
+        painter = context.painter
+        if args.action == 'select':
+            await charger.select_screen_picture(args.id, args.crc32)
+            confirm(context, charger, Capability.SCREEN_PICTURE,
+                    f'Screen picture {args.id} shown.')
+            return 0
+        if not args.i_understand:
+            context.print(painter.warn(IRREVERSIBLE))
+            raise InvalidParameterError(
+                'add --i-understand to write the picture anyway')
+        data = await asyncio.to_thread(Path(args.file).read_bytes)
+        jpeg = await asyncio.to_thread(prepare_picture, data, SCREEN_PICTURE)
+        context.print(f'Sending {len(jpeg) // 1024} KB to the charger…')
+        try:
+            upload = await charger.upload_screen_picture(
+                jpeg, acknowledge_irreversible=True)
+        except PictureTransferError as error:
+            if error.pixels_written:
+                context.print(painter.warn(
+                    'Part or all of the picture is in the charger now.'))
+            raise
+        message = (f'Screen picture shown: id {upload.picture_id}, '
+                   f'CRC-32 {upload.crc32:08x}.')
+        if not upload.witnessed:
+            message += (' The screen could not be compared with before; '
+                        'check it.')
+        confirm(context, charger, Capability.SCREEN_PICTURE, message)
+        return 0
+
+    def add_charger_arguments(self, parser: argparse.ArgumentParser) -> None:
+        actions = parser.add_subparsers(dest='action', metavar='action',
+                                        required=True)
+        upload = actions.add_parser(
+            'upload', help='write an image file to the screen; it is '
+                           'cropped to fill 240x240')
+        upload.add_argument('file')
+        upload.add_argument('--i-understand', action='store_true',
+                            help='confirm the picture cannot be removed '
+                                 'from the charger')
+        select = actions.add_parser(
+            'select', help='show a picture written before (reversible)')
+        select.add_argument('id', type=int)
+        select.add_argument('crc32', type=_hex_u32,
+                            help='CRC-32 printed by upload, in hex')
+
+
 def render_pictures(charger: Charger, pictures: tuple[ClockPicture, ...],
                     own: bool, painter: Painter) -> str:
     if not pictures:
@@ -126,3 +183,13 @@ def _find(pictures: tuple[ClockPicture, ...], picture_id: int,
     kind = 'own picture' if own else 'catalogue picture'
     raise InvalidParameterError(f'no {kind} {picture_id}')
 
+
+def _hex_u32(text: str) -> int:
+    try:
+        value = int(text.strip().lower().removeprefix('0x'), 16)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'not a hex number: {text!r}'
+                                         ) from None
+    if not 0 <= value <= 0xFFFFFFFF:
+        raise argparse.ArgumentTypeError(f'out of range: {text!r}')
+    return value

@@ -16,6 +16,13 @@ Rules from Charker, taken on trust (no 160W was available here):
 Energy counters are stored under the serial, which the first negotiation
 reveals when the caller did not know it.
 
+Custom mode is ``0x0206`` mode 2 with the C1-C3 limits; the read-back shows
+whether the charger took it. A screen picture goes over in 156-byte slices,
+pacing as Charker: the firmware answers every tenth slice and the last one,
+and the sender waits for each answer. Polling stands down meanwhile. The
+picture shown is read from ``E1`` before and after, the only witness that
+the screen changed.
+
 A Bluetooth charger accepts one connection at a time, so the official app is
 locked out while it is held. With ``keep_connection=False`` the device
 connects every ``update_interval`` (and for each command), reads the state
@@ -38,21 +45,26 @@ from ankerprime.energy.recorder import EnergyRecorder
 from ankerprime.energy.store import EnergyStore
 from ankerprime.interfaces.channel import ChannelListener
 from ankerprime.interfaces.storage import DocumentStore
+from ankerprime.model.capabilities import Capability
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import (
     ChargingMode, DisplayLanguage, FixedAllocation,
     OutputId, PortId, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import (
     AccountRefusedError, AnkerPrimeError, AuthenticationError,
     ChargerConnectionError, ChargerTimeoutError,
-    InvalidParameterError, ProtocolError, WriteRejectedError)
+    InvalidParameterError, PictureTransferError, ProtocolError,
+    UnsupportedCapabilityError, WriteRejectedError)
+from ankerprime.model.pictures import ScreenPictureUpload
 from ankerprime.model.product import A2687
 from ankerprime.model.state import DeviceInfo
-from ankerprime.protocol.a2687 import commands
+from ankerprime.protocol.a2687 import commands, cover
 from ankerprime.protocol.a2687.codes import (
     CHARGING_MODE_CODES, DISPLAY_LANGUAGE_CODES,
     FIELD_A1, FIXED_ALLOCATION_CODES, OP_BRIGHTNESS, OP_FIXED_ALLOCATION,
-    OP_GYROSCOPE, OP_LANGUAGE, OP_ORIENTATION, OP_READ_ALL, OP_REALTIME_REPORT,
-    OP_SCREEN_TIMEOUT, OUTPUTS, SCREEN_ORIENTATION_CODES, SCREEN_TIMEOUT_CODES)
+    OP_COVER_TRANSFER_CHUNK, OP_COVER_TRANSFER_START, OP_GYROSCOPE, OP_LANGUAGE,
+    OP_ORIENTATION, OP_READ_ALL, OP_REALTIME_REPORT, OP_SCREEN_TIMEOUT,
+    OP_SET_SCREENSAVER, OUTPUTS, SCREEN_ORIENTATION_CODES, SCREEN_TIMEOUT_CODES)
 from ankerprime.protocol.a2687.commands import OutgoingMessage
 from ankerprime.protocol.a2687.frame import Frame, decode_frame, encode_frame
 from ankerprime.protocol.a2687.telemetry import decode_report
@@ -68,6 +80,7 @@ logger = logging.getLogger(__name__)
 Callback = Callable[[], None]
 
 REPORT_OPCODES = frozenset({OP_REALTIME_REPORT, OP_READ_ALL})
+JPEG_MAGIC = b'\xff\xd8\xff'
 DEFAULT_COUNTRY = 'US'
 
 
@@ -85,13 +98,15 @@ class A2687Timings:
     _linger: float
     _energy_save: float
     _tick: float
+    _screen_picture: ScreenPictureTimings
 
     def __init__(self, *, poll_interval: float = 6.0,
                  stale_after: float = 20.0, telemetry_deadline: float = 20.0,
                  opening_spacing: float = 0.4, reply_timeout: float = 6.0,
                  retry_max: float = 30.0, update_interval: float = 60.0,
                  linger: float = 5.0, energy_save: float = 60.0,
-                 tick: float = 1.0):
+                 tick: float = 1.0,
+                 screen_picture: ScreenPictureTimings | None = None):
         self._poll_interval = poll_interval
         self._stale_after = stale_after
         self._telemetry_deadline = telemetry_deadline
@@ -102,6 +117,7 @@ class A2687Timings:
         self._linger = linger
         self._energy_save = energy_save
         self._tick = tick
+        self._screen_picture = screen_picture or ScreenPictureTimings()
 
     @property
     def poll_interval(self) -> float:
@@ -151,10 +167,86 @@ class A2687Timings:
     def tick(self) -> float:
         return self._tick
 
+    @property
+    def screen_picture(self) -> ScreenPictureTimings:
+        return self._screen_picture
+
     def retry_delay(self, failures: int) -> float:
         """Delay before reconnect attempt ``failures``: 2, 4, 8 ... s."""
 
         return min(float(1 << min(max(failures, 1), 6)), self._retry_max)
+
+
+@dataclass(init=False)
+class ScreenPictureTimings:
+    """Pauses and limits of a screen picture transfer, from Charker.
+
+    They are what the working client does; the firmware's real tolerances
+    are unknown.
+    """
+
+    _settle_after_select: float
+    _settle_after_start: float
+    _chunk_spacing: float
+    _acknowledgement_timeout: float
+    _settle_before_verify: float
+    _verify_attempts: int
+    _verify_delay: float
+    _budget: float
+
+    def __init__(self, *, settle_after_select: float = 0.15,
+                 settle_after_start: float = 0.2,
+                 chunk_spacing: float = 0.04,
+                 acknowledgement_timeout: float = 5.0,
+                 settle_before_verify: float = 0.4,
+                 verify_attempts: int = 3, verify_delay: float = 1.0,
+                 budget: float = 240.0):
+        self._settle_after_select = settle_after_select
+        self._settle_after_start = settle_after_start
+        self._chunk_spacing = chunk_spacing
+        self._acknowledgement_timeout = acknowledgement_timeout
+        self._settle_before_verify = settle_before_verify
+        self._verify_attempts = verify_attempts
+        self._verify_delay = verify_delay
+        self._budget = budget
+
+    @property
+    def settle_after_select(self) -> float:
+        return self._settle_after_select
+
+    @property
+    def settle_after_start(self) -> float:
+        return self._settle_after_start
+
+    @property
+    def chunk_spacing(self) -> float:
+        """Pause after each slice the firmware does not answer."""
+
+        return self._chunk_spacing
+
+    @property
+    def acknowledgement_timeout(self) -> float:
+        return self._acknowledgement_timeout
+
+    @property
+    def settle_before_verify(self) -> float:
+        """``E1`` does not change the moment the last slice lands."""
+
+        return self._settle_before_verify
+
+    @property
+    def verify_attempts(self) -> int:
+        return self._verify_attempts
+
+    @property
+    def verify_delay(self) -> float:
+        return self._verify_delay
+
+    @property
+    def budget(self) -> float:
+        """Ceiling on sending the slices."""
+
+        return self._budget
 
 
 class _Waiter:
@@ -208,6 +300,7 @@ class A2687Device(BaseCharger, ChannelListener):
     _link_users: int
     _write_lock: asyncio.Lock
     _waiters: list[_Waiter]
+    _transferring: bool
 
     _failures: int
     _next_attempt: float
@@ -253,6 +346,7 @@ class A2687Device(BaseCharger, ChannelListener):
         self._link_users = 0
         self._write_lock = asyncio.Lock()
         self._waiters = []
+        self._transferring = False
         self._failures = 0
         self._next_attempt = 0.0
         self._next_read = 0.0
@@ -402,6 +496,131 @@ class A2687Device(BaseCharger, ChannelListener):
         await self._write_setting(
             OP_LANGUAGE, code, lambda: self._tracker.apply_language(language))
 
+    async def _apply_custom_profile(self, profile: ChargingProfile) -> None:
+        rules = self._product.custom_mode
+        if rules is None:
+            raise UnsupportedCapabilityError(Capability.CUSTOM_CHARGING_MODE)
+        rules.validate(profile)
+        watts = [profile.watts(output) for output in OUTPUTS]
+        code = encode_value(CHARGING_MODE_CODES, ChargingMode.CUSTOM)
+        message = commands.set_custom_charging_mode(
+            profile.number, profile.auto_exit, watts, self._timestamp())
+        # The read-back after the write shows whether the charger took it.
+        await self._write(message,
+                          lambda: self._tracker.apply_charging_mode(code))
+
+    async def _exit_custom_mode(self) -> None:
+        # There is no exit command; auto exit also returns to AI mode.
+        await self._set_charging_mode(ChargingMode.AI)
+
+    async def _upload_screen_picture(self, jpeg: bytes,
+                                     acknowledge_irreversible: bool
+                                     ) -> ScreenPictureUpload:
+        if not acknowledge_irreversible:
+            raise InvalidParameterError(
+                'a screen picture cannot be removed from the charger; '
+                'confirm with acknowledge_irreversible=True')
+        if not jpeg.startswith(JPEG_MAGIC):
+            raise InvalidParameterError('screen pictures must be JPEG files')
+        async with self._write_lock, self._link():
+            self._transferring = True
+            try:
+                return await self._transfer_picture(jpeg)
+            finally:
+                self._transferring = False
+
+    async def _select_screen_picture(self, picture_id: int, crc32: int
+                                     ) -> None:
+        message = cover.select_cover(picture_id, crc32, self._timestamp())
+        await self._write(message)
+
+    async def _transfer_picture(self, jpeg: bytes) -> ScreenPictureUpload:
+        """Select, announce, send the slices, then verify with ``E1``."""
+
+        timings = self._timings.screen_picture
+        before = await self._shown_picture()
+        plan = cover.CoverPlan(jpeg, cover.mint_picture_id(jpeg, before))
+        timestamp = self._timestamp()
+        try:
+            # A new picture is answered 0x11 ("pixels missing"): expected.
+            await self._request(cover.select_cover(
+                plan.picture_id, plan.crc32, timestamp), (OP_SET_SCREENSAVER,))
+            await asyncio.sleep(timings.settle_after_select)
+            reply = await self._request(cover.start_transfer(plan, timestamp),
+                                        (OP_COVER_TRANSFER_START,))
+        except ChargerTimeoutError as error:
+            raise PictureTransferError(f'screen picture not started: {error}'
+                                       ) from None
+        if not reply.ok:
+            raise PictureTransferError(
+                f'charger refused the screen picture (status '
+                f'{reply.status:#04x})')
+        await asyncio.sleep(timings.settle_after_start)
+        await self._send_slices(plan, timings)
+        await asyncio.sleep(timings.settle_before_verify)
+        shown = None
+        for attempt in range(max(1, timings.verify_attempts)):
+            if attempt:
+                await asyncio.sleep(timings.verify_delay)
+            shown = await self._shown_picture()
+            if shown == plan.reported_id:
+                break
+        if shown != plan.reported_id:
+            raise PictureTransferError(
+                'the picture reached the charger but the screen does not '
+                'show it; try select_screen_picture', pixels_written=True)
+        return ScreenPictureUpload(
+            plan.picture_id, plan.crc32, byte_count=plan.byte_count,
+            chunk_count=plan.chunk_count, previous=before,
+            witnessed=before is not None and before != plan.reported_id)
+
+    async def _send_slices(self, plan: cover.CoverPlan,
+                           timings: ScreenPictureTimings) -> None:
+        deadline = _monotonic() + timings.budget
+        total = plan.chunk_count
+        for index, payload in plan.chunks():
+            written = index > 0
+            if _monotonic() >= deadline:
+                raise PictureTransferError(
+                    f'screen picture too slow: {index} of {total} slices '
+                    'sent', pixels_written=written)
+            message = cover.transfer_chunk(index, payload)
+            try:
+                if not plan.is_checkpoint(index):
+                    await self._send(message)
+                    await asyncio.sleep(timings.chunk_spacing)
+                    continue
+                reply = await self._request(
+                    message, (OP_COVER_TRANSFER_CHUNK,),
+                    timeout=timings.acknowledgement_timeout)
+            except (ChargerConnectionError, ChargerTimeoutError) as error:
+                raise PictureTransferError(
+                    f'screen picture stopped at slice {index} of {total}: '
+                    f'{error}', pixels_written=True) from None
+            final = index == total - 1
+            # The last slice is answered 0x10 once the picture is stored.
+            done = final and reply.status == cover.TRANSFER_COMPLETE
+            if not reply.ok and not done:
+                raise PictureTransferError(
+                    f'charger refused slice {index} (status '
+                    f'{reply.status:#04x})', pixels_written=True)
+            expected = cover.next_index(reply)
+            if expected is not None and expected != index + 1:
+                raise PictureTransferError(
+                    f'charger expects slice {expected} after {index}; '
+                    'slices were lost', pixels_written=True)
+
+    async def _shown_picture(self) -> int | None:
+        """``E1`` from a fresh read-all; None when it cannot be read."""
+
+        try:
+            payload = await self._request(
+                commands.read_all(self._timestamp()), REPORT_OPCODES)
+        except ChargerTimeoutError:
+            return None
+        settings = decode_report(payload).settings
+        return settings.screen_picture if settings is not None else None
+
     async def _supervise(self) -> None:
         """Keep the link (or the periodic reads), staleness and energy."""
 
@@ -418,8 +637,8 @@ class A2687Device(BaseCharger, ChannelListener):
                     await self._close_link()
                 if self._keep_connection:
                     await self._keep_link(now)
-                elif now >= self._next_read and (self._reader is None
-                                                 or self._reader.done()):
+                elif (now >= self._next_read and not self._transferring
+                      and (self._reader is None or self._reader.done())):
                     self._next_read = now + timings.update_interval
                     self._reader = self._spawn(self._read_state())
             except AuthenticationError as error:
@@ -458,6 +677,9 @@ class A2687Device(BaseCharger, ChannelListener):
                 else:
                     logger.exception('unexpected error reconnecting %s',
                                      self._label)
+            return
+        if self._transferring:
+            # Nothing may interleave with the slices of a screen picture.
             return
         reference = self._last_telemetry or self._opened_at
         if now - reference >= timings.telemetry_deadline:
@@ -594,14 +816,16 @@ class A2687Device(BaseCharger, ChannelListener):
                              self._label)
 
     async def _request(self, message: OutgoingMessage,
-                       opcodes: Iterable[int]) -> Payload:
+                       opcodes: Iterable[int], *,
+                       timeout: float | None = None) -> Payload:
         future = asyncio.get_running_loop().create_future()
         waiter = _Waiter(opcodes, future)
         self._waiters.append(waiter)
+        if timeout is None:
+            timeout = self._timings.reply_timeout
         try:
             await self._send(message)
-            return await asyncio.wait_for(asyncio.shield(future),
-                                          self._timings.reply_timeout)
+            return await asyncio.wait_for(asyncio.shield(future), timeout)
         except TimeoutError:
             raise ChargerTimeoutError(
                 f'charger did not answer {message.opcode:#06x}') from None

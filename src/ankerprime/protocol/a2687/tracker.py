@@ -142,7 +142,8 @@ class StateTracker:
                                   screen_timeout=timeout,
                                   orientation=orientation,
                                   auto_rotation=settings.auto_rotation,
-                                  language=self._language)
+                                  language=self._language,
+                                  screen_picture=settings.screen_picture)
         mode = decode_value(CHARGING_MODE_CODES, settings.charging_mode)
         return ChargerSettings(charging_mode=mode,
                                charging_mode_code=settings.charging_mode,
@@ -161,7 +162,8 @@ def _merge(old: DeviceSettings, new: DeviceSettings) -> DeviceSettings:
         brightness=_pick(new.brightness, old.brightness),
         charging_mode=_pick(new.charging_mode, old.charging_mode),
         orientation=_pick(new.orientation, old.orientation),
-        auto_rotation=_pick(new.auto_rotation, old.auto_rotation))
+        auto_rotation=_pick(new.auto_rotation, old.auto_rotation),
+        screen_picture=_pick(new.screen_picture, old.screen_picture))
 
 
 def _pick(value: ValueT | None, previous: ValueT | None) -> ValueT | None:

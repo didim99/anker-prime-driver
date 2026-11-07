@@ -22,19 +22,25 @@ if TYPE_CHECKING:
 
 @dataclass(init=False)
 class PictureFormat:
-    """Target size in pixels and the accepted JPEG size in bytes."""
+    """Target size in pixels and either a fixed JPEG quality or a size window.
+
+    With ``quality`` the picture is encoded once; otherwise the quality is
+    searched for a size between ``min_bytes`` and ``max_bytes``.
+    """
 
     _width: int
     _height: int
     _min_bytes: int
     _max_bytes: int
+    _quality: int | None
 
-    def __init__(self, width: int, height: int, *, min_bytes: int,
-                 max_bytes: int):
+    def __init__(self, width: int, height: int, *, min_bytes: int = 0,
+                 max_bytes: int = 0, quality: int | None = None):
         self._width = width
         self._height = height
         self._min_bytes = min_bytes
         self._max_bytes = max_bytes
+        self._quality = quality
 
     @property
     def width(self) -> int:
@@ -56,9 +62,16 @@ class PictureFormat:
 
         return self._max_bytes
 
+    @property
+    def quality(self) -> int | None:
+        return self._quality
+
 
 CLOCK_PICTURE = PictureFormat(480, 200, min_bytes=78_643, max_bytes=98_304)
 """Clock picture of the 250W."""
+
+SCREEN_PICTURE = PictureFormat(240, 240, quality=85)
+"""Screen picture of the 160W, at the quality Charker uses."""
 
 QUALITY_RANGE = (1, 90)
 QUALITY_START = 45
@@ -97,6 +110,8 @@ def prepare_picture(data: bytes, target: PictureFormat = CLOCK_PICTURE
     canvas = Image.new('RGB', (target.width, target.height), (0, 0, 0))
     canvas.paste(resized, ((target.width - size[0]) // 2,
                            (target.height - size[1]) // 2))
+    if target.quality is not None:
+        return _jpeg(canvas, target.quality)
     return _search_quality(canvas, target)
 
 

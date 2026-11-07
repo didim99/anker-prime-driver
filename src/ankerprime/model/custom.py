@@ -231,19 +231,21 @@ class CustomModeRules:
     _ports: tuple[CustomPortRule, ...]
     _default_watts: Mapping[OutputId, int]
     _has_protocols: bool
+    _named: bool
     _name_length: int
     _max_voltage_profiles: int
 
     def __init__(self, *, numbers: range, total_limit: int,
                  ports: Iterable[CustomPortRule],
                  default_watts: Mapping[OutputId, int],
-                 has_protocols: bool, name_length: int = 20,
-                 max_voltage_profiles: int = 3):
+                 has_protocols: bool, named: bool = True,
+                 name_length: int = 20, max_voltage_profiles: int = 3):
         self._numbers = numbers
         self._total_limit = total_limit
         self._ports = tuple(ports)
         self._default_watts = MappingProxyType(dict(default_watts))
         self._has_protocols = has_protocols
+        self._named = named
         self._name_length = name_length
         self._max_voltage_profiles = max_voltage_profiles
 
@@ -266,6 +268,12 @@ class CustomModeRules:
         """Profiles carry per-port protocol choices."""
 
         return self._has_protocols
+
+    @property
+    def named(self) -> bool:
+        """Profiles are stored under a name (250W); the 160W keeps none."""
+
+        return self._named
 
     @property
     def name_length(self) -> int:
@@ -342,7 +350,7 @@ class CustomModeRules:
                 f'profile number must be {self._numbers.start}–'
                 f'{self._numbers.stop - 1}')
         name = profile.name.strip()
-        if not 1 <= len(name) <= self._name_length:
+        if self._named and not 1 <= len(name) <= self._name_length:
             raise InvalidParameterError(
                 f'profile name must have 1–{self._name_length} characters')
         known = {rule.output for rule in self._ports}

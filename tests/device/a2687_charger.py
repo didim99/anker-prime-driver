@@ -7,6 +7,7 @@ an identity check standing in for firmware bound to an account.
 """
 
 import asyncio
+import zlib
 from dataclasses import dataclass, field
 
 from ankerprime.interfaces.channel import Channel, ChannelListener
@@ -23,7 +24,7 @@ from ankerprime.protocol.a2687.crypto import (
 from ankerprime.protocol.a2687.frame import (
     Frame, FrameReassembler, encode_frame)
 from ankerprime.protocol.a2687.tlv import (
-    TYPE_U8, Payload, encode_fields, typed_bytes, typed_u8)
+    TYPE_U8, Payload, encode_fields, typed_bytes, typed_u8, typed_u16)
 
 
 IDLE_CONTROL = bytes.fromhex('01002c0100002c010000')
@@ -72,6 +73,16 @@ class SimulatedCharger:
     port_refusal: int = 0
     # Answers nothing and stops reporting, as when out of range.
     muted: bool = False
+    # Screen pictures: the one shown (E1, low 16 bits), stored ids and CRCs.
+    screen_picture: int | None = 0x1234
+    stored_pictures: dict[int, int] = field(default_factory=dict)
+    cover_refusal: int = 0
+    # Checkpoint index left unanswered, or answered with a wrong next index.
+    cover_silent_at: int | None = None
+    cover_skip_at: int | None = None
+    # The picture is stored but the screen keeps the old one.
+    cover_hide: bool = False
+    custom_power: bytes | None = None
 
     requests: list[tuple[int, Payload]] = field(default_factory=list)
     identity: str | None = None
@@ -81,6 +92,8 @@ class SimulatedCharger:
     _session: SessionKeys | None = None
     _open: bool = False
     _reassembler: FrameReassembler = field(default_factory=FrameReassembler)
+    _transfer: dict[str, int] | None = None
+    _slices: dict[int, bytes] = field(default_factory=dict)
 
     @property
     def session_open(self) -> bool:
@@ -202,12 +215,71 @@ class SimulatedCharger:
                 if value == 2 and request.get(FIELD_A3) is None:
                     return [self._seal(frame.group, frame.opcode, True,
                                        b'\x04', keys)]
+                if value == 2:
+                    power = request.typed(FIELD_A3)
+                    self.custom_power = power.block if power else None
                 self.settings[0xAA] = value
                 return [self._ack(frame, [], keys)]
+            case codes.OP_SET_SCREENSAVER | codes.OP_COVER_TRANSFER_START | (
+                    codes.OP_COVER_TRANSFER_CHUNK):
+                return self._cover(frame, request, keys)
         if frame.opcode in SETTING_OPCODES and value is not None:
             self._apply_setting(frame.opcode, value)
             return [self._ack(frame, [], keys)]
         return []
+
+    def _cover(self, frame: Frame, request: Payload,
+               keys: SessionKeys) -> list[bytes]:
+        if frame.opcode == codes.OP_SET_SCREENSAVER:
+            picture_id = _block_u32(request, FIELD_A4)
+            crc = _block_u32(request, FIELD_A5)
+            if self.stored_pictures.get(picture_id) != crc:
+                # Known id, pixels missing.
+                return [self._status(frame, 0x11, [], keys)]
+            self.screen_picture = picture_id & 0xFFFF
+            return [self._ack(frame, [], keys)]
+        if frame.opcode == codes.OP_COVER_TRANSFER_START:
+            if self.cover_refusal:
+                return [self._status(frame, self.cover_refusal, [], keys)]
+            size = request.typed(FIELD_A5)
+            count = request.typed(codes.FIELD_A8)
+            assert size is not None and count is not None
+            self._transfer = {'id': _block_u32(request, FIELD_A3),
+                              'crc': _block_u32(request, FIELD_A4),
+                              'size': size.scalar or 0,
+                              'count': count.scalar or 0}
+            self._slices = {}
+            return [self._ack(frame, [], keys)]
+        transfer = self._transfer
+        index = request.typed(FIELD_A2)
+        data = request.typed(FIELD_A3)
+        assert transfer is not None and index is not None and data is not None
+        position = index.scalar or 0
+        self._slices[position] = data.block or b''
+        final = position == transfer['count'] - 1
+        if not final and (position + 1) % 10:
+            return []
+        if position == self.cover_silent_at:
+            return []
+        expected = position + 1
+        if position == self.cover_skip_at:
+            expected = position
+        status = 0
+        if final:
+            jpeg = b''.join(self._slices[i] for i in sorted(self._slices))
+            jpeg = jpeg[:transfer['size']]
+            if zlib.crc32(jpeg) == transfer['crc']:
+                self.stored_pictures[transfer['id']] = transfer['crc']
+                if not self.cover_hide:
+                    self.screen_picture = transfer['id'] & 0xFFFF
+                status = 0x10
+        return [self._status(frame, status, [(FIELD_A2, typed_u16(expected))],
+                             keys)]
+
+    def _status(self, frame: Frame, status: int,
+                fields: list[tuple[int, bytes]], keys: SessionKeys) -> bytes:
+        return self._seal(frame.group, frame.opcode, True,
+                          bytes((status,)) + encode_fields(fields), keys)
 
     def _apply_setting(self, opcode: int, value: int) -> None:
         match opcode:
@@ -243,6 +315,10 @@ class SimulatedCharger:
                 control + bytes((port.cable, port.profile)))))
         for tag, value in self.settings.items():
             fields.append((tag, typed_u8(value)))
+        if self.screen_picture is not None:
+            fields.append((codes.FIELD_COVER_STATE, typed_bytes(
+                b'\x00\x03' + self.screen_picture.to_bytes(2, 'little')
+                + bytes(6))))
         return b'\x00' + encode_fields(fields)
 
     def _ack(self, frame: Frame, fields: list[tuple[int, bytes]],
@@ -254,6 +330,12 @@ class SimulatedCharger:
               plaintext: bytes, keys: SessionKeys) -> bytes:
         return encode_frame(Frame.build(group, opcode, keys.seal(plaintext),
                                         encrypted=True, response=response))
+
+
+def _block_u32(request: Payload, tag: int) -> int:
+    value = request.typed(tag)
+    assert value is not None and value.block is not None
+    return int.from_bytes(value.block, 'little')
 
 
 def _u8(raw: bytes | None) -> int | None:

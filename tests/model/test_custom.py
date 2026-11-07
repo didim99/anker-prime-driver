@@ -3,7 +3,7 @@
 import pytest
 
 from ankerprime.model import (
-    A2345, AccountSettings, ChargingProfile, CustomModeRules,
+    A2345, A2687, AccountSettings, ChargingProfile, CustomModeRules,
     CustomPortLimit, CustomProtocol, InvalidParameterError, OutputId)
 
 
@@ -110,3 +110,19 @@ def test_account_settings_replace_keeps_unset_values() -> None:
     assert changed.custom_mode_enabled is True
     assert changed.max_compatibility is True
     assert changed.device_identification is None
+
+
+def test_160w_rules_need_no_name_and_no_protocols() -> None:
+    assert A2687.custom_mode is not None
+    small = A2687.custom_mode
+    profile = small.template(1, '')
+    assert [port.watts for port in profile.ports] == [60, 60, 40]
+    assert not profile.protocols_enabled
+    assert all(not port.protocols for port in profile.ports)
+    small.validate(profile)
+    with pytest.raises(InvalidParameterError, match='total'):
+        small.validate(profile.with_port(CustomPortLimit(OutputId.C1, 70)))
+    with pytest.raises(InvalidParameterError, match='usb_a'):
+        small.validate(profile.with_port(CustomPortLimit(OutputId.USB_A, 15)))
+    with pytest.raises(InvalidParameterError, match='number'):
+        small.validate(profile.replace(number=2))

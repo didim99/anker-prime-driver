@@ -80,7 +80,8 @@ def test_capabilities_narrowed_by_firmware() -> None:
     state = ChargerState(A2345, capabilities=narrowed)
     assert not state.supports(Capability.UFCS)
     assert state.supports(Capability.OUTPUT_SWITCH)
-    planned = ChargerState(A2687)
+    planned = ChargerState(A2687, capabilities={
+        Capability.SCREEN_PICTURE: Verification.PLANNED})
     assert not planned.supports(Capability.SCREEN_PICTURE)
     assert state.capabilities[Capability.OUTPUT_SWITCH] == Verification.VERIFIED
 

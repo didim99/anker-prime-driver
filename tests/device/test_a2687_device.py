@@ -253,7 +253,9 @@ async def test_invalid_and_unsupported(device: A2687Device) -> None:
         await device.set_screen_timeout(ScreenTimeout.ALWAYS_ON)
     with pytest.raises(UnsupportedCapabilityError):
         await device.set_ufcs(True)
-    assert not device.supports(Capability.CUSTOM_CHARGING_MODE)
+    # Custom mode takes limits; stored profiles are a 250W feature.
+    assert device.supports(Capability.CUSTOM_CHARGING_MODE)
+    assert not device.supports(Capability.CUSTOM_PROFILES)
 
 
 async def test_writes_need_a_connection(device: A2687Device) -> None:

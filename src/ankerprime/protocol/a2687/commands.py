@@ -5,7 +5,7 @@ with the bare four-byte epoch (not a typed u32). Values are typed u8 unless
 noted. Encryption happens in the session layer.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -17,6 +17,8 @@ from ankerprime.protocol.a2687.tlv import (
     encode_fields, typed_bytes, typed_u8)
 from ankerprime.utils import u32le
 
+
+CUSTOM_MODE_CODE = 2
 
 # The enable block the official app sends with the realtime trigger.
 REALTIME_ENABLE = bytes.fromhex('010003150101000000')
@@ -121,6 +123,21 @@ def set_charging_mode(code: int, timestamp: int) -> OutgoingMessage:
     """0x0206: 0 AI, 1 standard, 2 custom (custom also needs power limits)."""
 
     return session(OP_CHARGING_MODE, [(FIELD_A2, typed_u8(code))], timestamp)
+
+
+def set_custom_charging_mode(number: int, auto_exit: bool,
+                             watts: Sequence[int],
+                             timestamp: int) -> OutgoingMessage:
+    """0x0206 mode 2 with the C1-C3 limits: number, auto exit, watts.
+
+    Firmware with its own protocol management takes no protocol list, so
+    none is sent (as Charker).
+    """
+
+    block = bytes((number, int(auto_exit), *watts))
+    return session(OP_CHARGING_MODE, [(FIELD_A2, typed_u8(CUSTOM_MODE_CODE)),
+                                      (FIELD_A3, typed_bytes(block))],
+                   timestamp)
 
 
 def set_setting(opcode: int, value: int, timestamp: int) -> OutgoingMessage:

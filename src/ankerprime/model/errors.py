@@ -68,4 +68,18 @@ class WriteRejectedError(AnkerPrimeError):
 
 
 class PictureTransferError(AnkerPrimeError):
-    """The charger could not fetch or store a picture."""
+    """The charger could not fetch or store a picture.
+
+    ``pixels_written`` tells whether picture data reached the charger's
+    storage before the failure; nothing over Bluetooth erases it.
+    """
+
+    _pixels_written: bool
+
+    def __init__(self, message: str, *, pixels_written: bool = False):
+        super().__init__(message)
+        self._pixels_written = pixels_written
+
+    @property
+    def pixels_written(self) -> bool:
+        return self._pixels_written
