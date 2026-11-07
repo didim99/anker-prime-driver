@@ -20,10 +20,11 @@ from dataclasses import dataclass
 
 from ankerprime.model.errors import InvalidParameterError
 from ankerprime.protocol.a2687.codes import (
-    FIELD_A1, FIELD_A2, FIELD_A3, FIELD_A4, FIELD_A5, FIELD_A6,
-    FIELD_A7, FIELD_A8, FIELD_TIMESTAMP, FIELD_URL, OP_COVER_TRANSFER_CHUNK,
-    OP_COVER_TRANSFER_START, OP_SET_SCREENSAVER, SESSION_ACTION, SESSION_GROUP)
-from ankerprime.protocol.a2687.commands import Encryption, OutgoingMessage
+    FIELD_A1, FIELD_A2, FIELD_A3, FIELD_A4, FIELD_A5, FIELD_A6, FIELD_A7,
+    FIELD_A8, FIELD_URL, OP_COVER_TRANSFER_CHUNK, OP_COVER_TRANSFER_START,
+    OP_SET_SCREENSAVER, SESSION_ACTION, SESSION_GROUP)
+from ankerprime.protocol.a2687.commands import (
+    Encryption, OutgoingMessage, session)
 from ankerprime.protocol.a2687.tlv import (
     Payload, TypedValue, encode_fields, typed_bytes,
     typed_text, typed_u8, typed_u16, typed_u32)
@@ -125,18 +126,18 @@ def select_cover(picture_id: int, crc32: int, timestamp: int,
 
     if len(url_key.encode('utf-8')) > MAX_URL_LENGTH:
         raise InvalidParameterError('cover URL key too long')
-    return _message(OP_SET_SCREENSAVER, [
+    return session(OP_SET_SCREENSAVER, [
         (FIELD_A3, typed_u8(CUSTOM_SCREENSAVER)),
         (FIELD_A4, typed_bytes(u32le(picture_id))),
         (FIELD_A5, typed_bytes(u32le(crc32))),
         (FIELD_URL, typed_text(url_key)),
-    ], timestamp)
+    ], timestamp, typed_timestamp=True)
 
 
 def start_transfer(plan: CoverPlan, timestamp: int) -> OutgoingMessage:
     """``0x0220``: announce the size and slicing of the transfer."""
 
-    return _message(OP_COVER_TRANSFER_START, [
+    return session(OP_COVER_TRANSFER_START, [
         (FIELD_A2, typed_u8(1)),
         (FIELD_A3, typed_bytes(u32le(plan.picture_id))),
         (FIELD_A4, typed_bytes(u32le(plan.crc32))),
@@ -144,7 +145,7 @@ def start_transfer(plan: CoverPlan, timestamp: int) -> OutgoingMessage:
         (FIELD_A6, typed_u8(ACKNOWLEDGE_EVERY)),
         (FIELD_A7, typed_u16(CHUNK_SIZE)),
         (FIELD_A8, typed_u16(plan.chunk_count)),
-    ], timestamp)
+    ], timestamp, typed_timestamp=True)
 
 
 def transfer_chunk(index: int, payload: bytes) -> OutgoingMessage:
@@ -170,13 +171,3 @@ def next_index(reply: Payload) -> int | None:
     if len(raw) == 2:
         return int.from_bytes(raw, 'little')
     return None
-
-
-def _message(opcode: int, fields: list[tuple[int, bytes]],
-             timestamp: int) -> OutgoingMessage:
-    """Cover commands carry the timestamp as a typed u32, unlike the rest."""
-
-    all_fields = [(FIELD_A1, bytes((SESSION_ACTION,))), *fields,
-                  (FIELD_TIMESTAMP, typed_u32(timestamp))]
-    return OutgoingMessage(SESSION_GROUP, opcode, encode_fields(all_fields),
-                           Encryption.SESSION)

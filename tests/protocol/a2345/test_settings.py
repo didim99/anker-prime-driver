@@ -3,14 +3,17 @@
 import pytest
 
 from ankerprime.model import OutputId, ScheduleSlot
+from ankerprime.protocol.a2345.device_settings import DeviceSettings
 from ankerprime.protocol.a2345.frame import Frame, Message, Tlv, decode_frame
 from ankerprime.protocol.a2345.messages import (
     StatusSnapshot, UnknownMessage, decode_message, decode_version_info)
 from ankerprime.protocol.a2345.settings import (
-    Capabilities, ChargingModeUpdate, ClockState, ClockUpdate, ClockWindow,
-    CountdownUpdate, CustomProfile, DeviceSettings, OutputSwitchUpdate,
-    PortProtocol, PortSchedule, PriorityUpdate, ScheduleUpdate, SettingField,
-    SettingsChange, ThemeDownloadUpdate, ValueUpdate, WriteAcknowledgement)
+    Capabilities, ClockState, ClockWindow, CustomProfile,
+    PortProtocol, PortSchedule, SettingField)
+from ankerprime.protocol.a2345.updates import (
+    ChargingModeUpdate, ClockUpdate, CountdownUpdate,
+    OutputSwitchUpdate, PriorityUpdate, ScheduleUpdate, SettingsChange,
+    ThemeDownloadUpdate, ValueUpdate, WriteAcknowledgement)
 from tests.protocol.a2345.fixtures import (
     OUTPUT_SWITCH_ACK, OUTPUT_SWITCH_PUSH, REALTIME_ACKNOWLEDGEMENT,
     STATUS_SNAPSHOT, THEME_STATUS, VERSION_INFO, VERSION_INFO_UNTYPED)

@@ -1,15 +1,17 @@
 """Helpers and type aliases shared by several modules."""
 
+import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeVar
 
 from ankerprime.model.errors import ProtocolError
 
 
 Clock = Callable[[], datetime]
+T = TypeVar('T')
 
 REDACT_VISIBLE_SUFFIX = 4
 U32_MASK = 0xFFFFFFFF
@@ -19,6 +21,12 @@ def utc_now() -> datetime:
     """Default ``Clock``: the current time in UTC."""
 
     return datetime.now(UTC)
+
+
+def monotonic() -> float:
+    """The running event loop's monotonic clock, in seconds."""
+
+    return asyncio.get_running_loop().time()
 
 
 def parse_json_object(body: bytes) -> dict[str, Any]:
@@ -53,3 +61,16 @@ def redact(value: str | None) -> str:
     if len(value) <= REDACT_VISIBLE_SUFFIX:
         return '***'
     return f'***{value[-REDACT_VISIBLE_SUFFIX:]}'
+
+
+def copy_with(value: T, changes: Mapping[str, Any]) -> T:
+    """A copy built from the private fields, with some of them changed.
+
+    For value classes whose keyword-only constructor takes every field
+    under its name without the underscore. An unknown name raises
+    ``TypeError`` as the constructor does.
+    """
+
+    fields = {name.removeprefix('_'): field
+              for name, field in vars(value).items()}
+    return type(value)(**{**fields, **changes})

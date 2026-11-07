@@ -1,8 +1,9 @@
 """Product definitions, capabilities and charger state shared by all layers."""
 
+from ankerprime.model.account import AccountSettings
 from ankerprime.model.capabilities import Capability, Verification
 from ankerprime.model.custom import (
-    AccountSettings, ChargingProfile, CustomModeRules,
+    ChargingProfile, CustomModeRules,
     CustomPortLimit, CustomPortRule, CustomProtocol)
 from ankerprime.model.enums import (
     CableRating, ChargingMode, ChargingProtocol, ClockTheme,

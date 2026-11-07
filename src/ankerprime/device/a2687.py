@@ -34,13 +34,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import (
-    AsyncIterator, Callable, Collection, Coroutine, Iterable)
+from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
-from ankerprime.device.base import BaseCharger
+from ankerprime.device.running import RunningCharger
 from ankerprime.energy.recorder import EnergyRecorder
 from ankerprime.energy.store import EnergyStore
 from ankerprime.interfaces.channel import ChannelListener
@@ -49,13 +48,13 @@ from ankerprime.model.capabilities import Capability
 from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import (
     ChargingMode, DisplayLanguage, FixedAllocation,
-    OutputId, PortId, ScreenOrientation, ScreenTimeout)
+    OutputId, ScreenOrientation, ScreenTimeout)
 from ankerprime.model.errors import (
     AccountRefusedError, AnkerPrimeError, AuthenticationError,
     ChargerConnectionError, ChargerTimeoutError,
     InvalidParameterError, PictureTransferError, ProtocolError,
     UnsupportedCapabilityError, WriteRejectedError)
-from ankerprime.model.pictures import ScreenPictureUpload
+from ankerprime.model.pictures import JPEG_MAGIC, ScreenPictureUpload
 from ankerprime.model.product import A2687
 from ankerprime.model.state import DeviceInfo
 from ankerprime.protocol.a2687 import commands, cover
@@ -72,7 +71,7 @@ from ankerprime.protocol.a2687.tlv import TYPE_U8, Payload
 from ankerprime.protocol.a2687.tracker import StateTracker
 from ankerprime.protocol.codes import encode_value
 from ankerprime.session.a2687 import A2687Session
-from ankerprime.utils import Clock, redact, utc_now
+from ankerprime.utils import Clock, copy_with, monotonic, redact, utc_now
 
 
 logger = logging.getLogger(__name__)
@@ -80,7 +79,6 @@ logger = logging.getLogger(__name__)
 Callback = Callable[[], None]
 
 REPORT_OPCODES = frozenset({OP_REALTIME_REPORT, OP_READ_ALL})
-JPEG_MAGIC = b'\xff\xd8\xff'
 DEFAULT_COUNTRY = 'US'
 
 
@@ -176,6 +174,10 @@ class A2687Timings:
 
         return min(float(1 << min(max(failures, 1), 6)), self._retry_max)
 
+    def replace(self, **changes: Any) -> Self:
+        """A copy with the given timings changed."""
+
+        return copy_with(self, changes)
 
 @dataclass(init=False)
 class ScreenPictureTimings:
@@ -248,6 +250,10 @@ class ScreenPictureTimings:
 
         return self._budget
 
+    def replace(self, **changes: Any) -> Self:
+        """A copy with the given timings changed."""
+
+        return copy_with(self, changes)
 
 class _Waiter:
     """A request waiting for a frame with one of the opcodes."""
@@ -269,7 +275,7 @@ class _Waiter:
         return self._future
 
 
-class A2687Device(BaseCharger, ChannelListener):
+class A2687Device(RunningCharger, ChannelListener):
     """One A2687 behind an encrypted Bluetooth session."""
 
     _session: A2687Session
@@ -279,18 +285,14 @@ class A2687Device(BaseCharger, ChannelListener):
     _country: str
     _owner_id: str | None
     _timings: A2687Timings
-    _clock: Clock
 
     _tracker: StateTracker
     _available: bool
-    _energy: EnergyRecorder
     _energy_documents: DocumentStore | None
 
     _supervisor: asyncio.Task[None] | None
     _linger_task: asyncio.Task[None] | None
     _reader: asyncio.Task[None] | None
-    _saver: asyncio.Task[None] | None
-    _tasks: set[asyncio.Task[Any]]
     _wake: asyncio.Event
 
     _stopping: bool
@@ -317,27 +319,26 @@ class A2687Device(BaseCharger, ChannelListener):
                  energy_store: DocumentStore | None = None,
                  timings: A2687Timings | None = None,
                  clock: Clock | None = None):
-        super().__init__(A2687)
+        info = info or DeviceInfo()
+        timings = timings or A2687Timings()
+        energy = EnergyRecorder((spec.port for spec in A2687.ports),
+                                label=redact(info.serial),
+                                save_interval=timings.energy_save)
+        super().__init__(A2687, energy, clock or utc_now)
         self._session = session
-        self._base_info = info or DeviceInfo()
-        self._info = self._base_info
+        self._base_info = info
+        self._info = info
         self._keep_connection = keep_connection
         self._country = country
         self._owner_id = owner_id or None
-        self._timings = timings or A2687Timings()
-        self._clock = clock or utc_now
+        self._timings = timings
         self._tracker = StateTracker(A2687)
         self._available = False
-        self._energy = EnergyRecorder((spec.port for spec in A2687.ports),
-                                      label=redact(self._base_info.serial),
-                                      save_interval=self._timings.energy_save)
         self._energy_documents = energy_store
-        self._attach_energy_store(self._base_info.serial)
+        self._attach_energy_store(info.serial)
         self._supervisor = None
         self._linger_task = None
         self._reader = None
-        self._saver = None
-        self._tasks = set()
         self._wake = asyncio.Event()
         self._stopping = False
         self._link_open = False
@@ -374,7 +375,7 @@ class A2687Device(BaseCharger, ChannelListener):
         report = decode_report(payload)
         if self._tracker.apply(report, self._clock()):
             if report.ports:
-                now = _monotonic()
+                now = monotonic()
                 self._last_telemetry = now
                 self._failures = 0
                 powers = {port: reading.power
@@ -405,35 +406,19 @@ class A2687Device(BaseCharger, ChannelListener):
             await self._open_link()
         else:
             await self._read_state()
-        self._next_read = _monotonic() + self._timings.update_interval
+        self._next_read = monotonic() + self._timings.update_interval
         self._supervisor = asyncio.create_task(
             self._supervise(), name='ankerprime-a2687-supervisor')
 
     async def disconnect(self) -> None:
         self._stopping = True
-        tasks = [task for task in (self._supervisor, self._linger_task,
-                                   *self._tasks) if task is not None]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await self._cancel_tasks(self._supervisor, self._linger_task)
         self._supervisor = None
         self._linger_task = None
         self._reader = None
-        self._saver = None
-        self._tasks.clear()
         await self._close_link()
         self._energy.interrupt()
         self._available = False
-        self._publish_state()
-        await self._save_energy()
-
-    async def reset_energy(self, ports: Collection[PortId] | None = None
-                           ) -> None:
-        unknown = set(ports or ()) - set(self._energy.counters)
-        if unknown:
-            names = ', '.join(sorted(port.value for port in unknown))
-            raise InvalidParameterError(f'{A2687.code} has no port {names}')
-        self._energy.reset(ports, self._clock())
         self._publish_state()
         await self._save_energy()
 
@@ -576,11 +561,11 @@ class A2687Device(BaseCharger, ChannelListener):
 
     async def _send_slices(self, plan: cover.CoverPlan,
                            timings: ScreenPictureTimings) -> None:
-        deadline = _monotonic() + timings.budget
+        deadline = monotonic() + timings.budget
         total = plan.chunk_count
         for index, payload in plan.chunks():
             written = index > 0
-            if _monotonic() >= deadline:
+            if monotonic() >= deadline:
                 raise PictureTransferError(
                     f'screen picture too slow: {index} of {total} slices '
                     'sent', pixels_written=written)
@@ -631,7 +616,7 @@ class A2687Device(BaseCharger, ChannelListener):
             except TimeoutError:
                 pass
             self._wake.clear()
-            now = _monotonic()
+            now = monotonic()
             try:
                 if self._link_lost:
                     await self._close_link()
@@ -653,9 +638,7 @@ class A2687Device(BaseCharger, ChannelListener):
                 logger.exception('unexpected error supervising %s',
                                  self._label)
             self._update_availability(now)
-            if self._energy.save_due(now) and (self._saver is None
-                                               or self._saver.done()):
-                self._saver = self._spawn(self._save_energy())
+            self._save_energy_if_due(now)
 
     async def _keep_link(self, now: float) -> None:
         """Reopen a lost link, recycle a silent one and poll."""
@@ -709,7 +692,7 @@ class A2687Device(BaseCharger, ChannelListener):
         self._link_lost = False
         await self._session.open()
         self._link_open = True
-        now = _monotonic()
+        now = monotonic()
         self._opened_at = now
         self._last_poll = now
         self._poll_count = 0
@@ -874,36 +857,16 @@ class A2687Device(BaseCharger, ChannelListener):
             if not waiter.future.done():
                 waiter.future.set_exception(error)
 
-    async def _save_energy(self) -> None:
-        if await self._energy.save(_monotonic(), self._clock()):
-            self._publish_state()
-
-    def _spawn(self, coroutine: Coroutine[Any, Any, None]
-               ) -> asyncio.Task[None]:
-        # The coroutine runs as the task itself: a task canceled before its
-        # first step then closes it cleanly.
-        task = asyncio.create_task(coroutine)
-        self._tasks.add(task)
-        task.add_done_callback(self._finished)
-        return task
-
-    def _finished(self, task: asyncio.Task[None]) -> None:
-        self._tasks.discard(task)
-        if task.cancelled():
-            return
-        error = task.exception()
+    def _task_failed(self, error: BaseException) -> bool:
         if isinstance(error, AuthenticationError):
             self._last_error = error
             self._stopping = True
             self._publish_state()
-        elif isinstance(error, AnkerPrimeError):
+            return True
+        if isinstance(error, AnkerPrimeError):
             logger.debug('request to %s failed: %s', self._label, error)
-        elif error is not None:
-            logger.error('unexpected error in a task of %s', self._label,
-                         exc_info=error)
-
-    def _timestamp(self) -> int:
-        return int(self._clock().timestamp())
+            return True
+        return False
 
     @property
     def _label(self) -> str:
@@ -949,6 +912,3 @@ def _merge_info(base: DeviceInfo, negotiated: DeviceInfo) -> DeviceInfo:
                       hardware_version=base.hardware_version,
                       mac_address=negotiated.mac_address or base.mac_address)
 
-
-def _monotonic() -> float:
-    return asyncio.get_running_loop().time()

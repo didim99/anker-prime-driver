@@ -1,23 +1,16 @@
 """CLI clock-picture command against the fake cloud and broker."""
 
 import io
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from ankerprime.cli.main import EXIT_ERROR
-from tests.cli.test_commands import Cli
+from tests.cli.harness import Cli
 from tests.cloud.fakes import FakeAnkerCloud
 from tests.device.test_a2345_pictures import reporting_responder
 from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt
-
-
-@pytest.fixture
-def password(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setattr('sys.stdin', io.StringIO('secret\n'))
-    yield
 
 
 @pytest.fixture

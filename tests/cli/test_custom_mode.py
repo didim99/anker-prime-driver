@@ -2,32 +2,14 @@
 
 import argparse
 import base64
-import io
 import json
-from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
 from ankerprime.cli.commands.custom import parse_port_protocols
 from ankerprime.cli.main import EXIT_ERROR
 from ankerprime.model import CustomProtocol, OutputId
-from tests.cli.test_commands import Cli
-from tests.cloud.fakes import FakeAnkerCloud
-from tests.device.charger import charger_responder
-from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt
-
-
-@pytest.fixture
-def password(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setattr('sys.stdin', io.StringIO('secret\n'))
-    yield
-
-
-@pytest.fixture
-def cli(tmp_path: Path, password: None) -> Cli:
-    connector = FakeMqttConnector(charger_over_mqtt(charger_responder()))
-    return Cli(tmp_path / 'config', FakeAnkerCloud(), connector)
+from tests.cli.harness import Cli
 
 
 def sent_types(cli: Cli) -> list[int]:

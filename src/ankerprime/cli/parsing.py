@@ -6,6 +6,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import TypeVar
 
+from ankerprime.cloud.values import hex_u32
 from ankerprime.model.enums import OutputId, PortId, Weekday
 
 
@@ -103,6 +104,15 @@ def parse_days(text: str) -> Weekday:
             raise argparse.ArgumentTypeError(f'unknown day {name!r}')
         days |= day
     return days
+
+
+def parse_hex_u32(text: str) -> int:
+    """A 32-bit number in hex, with or without ``0x``."""
+
+    value = hex_u32(text)
+    if value is None:
+        raise argparse.ArgumentTypeError(f'not a 32-bit hex number: {text!r}')
+    return value
 
 
 def enum_converter(enum: type[EnumT]) -> Callable[[str], EnumT]:

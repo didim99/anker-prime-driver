@@ -5,11 +5,36 @@ import argparse
 from ankerprime.cli.aliases import (
     ChargerAlias, ChargerAliases, Connection, parse_alias_name,
     parse_country)
-from ankerprime.cli.base import CliContext, Command
+from ankerprime.cli.base import Action, ActionCommand, CliContext
 from ankerprime.cli.render import render_table
 
 
-class ChargerAliasCommand(Command):
+def _add_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('name', type=parse_alias_name)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument('--serial', help='serial of a cloud charger')
+    target.add_argument('--ble', metavar='ADDRESS',
+                        help='Bluetooth address of a 160W charger')
+    parser.add_argument('--owner-id',
+                        help='Anker account ID the 160W is bound to')
+    parser.add_argument('--country', type=parse_country,
+                        help='account country code for the 160W')
+    parser.add_argument('--default', action='store_true',
+                        help='also make it the default charger')
+
+
+def _name_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('name', type=parse_alias_name)
+
+
+def _default_arguments(parser: argparse.ArgumentParser) -> None:
+    choice = parser.add_mutually_exclusive_group()
+    choice.add_argument('name', type=parse_alias_name, nargs='?')
+    choice.add_argument('--clear', action='store_true',
+                        help='use no default charger')
+
+
+class ChargerAliasCommand(ActionCommand):
     """Names chargers so commands take ``-c NAME`` or nothing at all.
 
     ``list`` is the default action. The default charger is used by every
@@ -19,48 +44,42 @@ class ChargerAliasCommand(Command):
     NAME = 'charger'
     HELP = 'name chargers and choose the default one'
 
-    async def run(self, context: CliContext,
-                  args: argparse.Namespace) -> int:
+    DEFAULT_ACTION = 'list'
+    ACTIONS = (
+        Action('list', 'show the saved chargers'),
+        Action('add', 'save or replace a charger', _add_arguments),
+        Action('remove', 'forget a charger', _name_argument),
+        Action('default', 'show or choose the default charger',
+               _default_arguments),
+    )
+
+    async def run_list(self, context: CliContext,
+                       args: argparse.Namespace) -> int:
         aliases = await context.config.aliases()
-        match args.action:
-            case 'add':
-                self._add(context, aliases, args)
-            case 'remove':
-                alias = aliases.remove(args.name)
-                context.print(context.painter.good(
-                    f'Charger {alias.name} removed.'))
-            case 'default':
-                if not self._default(context, aliases, args):
-                    return 0
-            case _:
-                context.print(render_aliases(context, aliases))
-                return 0
+        context.print(render_aliases(context, aliases))
+        return 0
+
+    async def run_add(self, context: CliContext,
+                      args: argparse.Namespace) -> int:
+        aliases = await context.config.aliases()
+        self._add(context, aliases, args)
         await context.config.save_aliases(aliases)
         return 0
 
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        actions = parser.add_subparsers(dest='action', metavar='action')
-        actions.add_parser('list', help='show the saved chargers')
-        add = actions.add_parser('add', help='save or replace a charger')
-        add.add_argument('name', type=parse_alias_name)
-        target = add.add_mutually_exclusive_group(required=True)
-        target.add_argument('--serial', help='serial of a cloud charger')
-        target.add_argument('--ble', metavar='ADDRESS',
-                            help='Bluetooth address of a 160W charger')
-        add.add_argument('--owner-id',
-                         help='Anker account ID the 160W is bound to')
-        add.add_argument('--country', type=parse_country,
-                         help='account country code for the 160W')
-        add.add_argument('--default', action='store_true',
-                         help='also make it the default charger')
-        remove = actions.add_parser('remove', help='forget a charger')
-        remove.add_argument('name', type=parse_alias_name)
-        default = actions.add_parser(
-            'default', help='show or choose the default charger')
-        choice = default.add_mutually_exclusive_group()
-        choice.add_argument('name', type=parse_alias_name, nargs='?')
-        choice.add_argument('--clear', action='store_true',
-                            help='use no default charger')
+    async def run_remove(self, context: CliContext,
+                         args: argparse.Namespace) -> int:
+        aliases = await context.config.aliases()
+        alias = aliases.remove(args.name)
+        context.print(context.painter.good(f'Charger {alias.name} removed.'))
+        await context.config.save_aliases(aliases)
+        return 0
+
+    async def run_default(self, context: CliContext,
+                          args: argparse.Namespace) -> int:
+        aliases = await context.config.aliases()
+        if self._default(context, aliases, args):
+            await context.config.save_aliases(aliases)
+        return 0
 
     def _add(self, context: CliContext, aliases: ChargerAliases,
              args: argparse.Namespace) -> None:

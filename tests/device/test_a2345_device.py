@@ -15,16 +15,11 @@ from ankerprime.model import (
     ScheduleSlot, UnsupportedCapabilityError, Weekday, WriteRejectedError)
 from tests.device.charger import (
     FakeChannel, charger_frame, charger_responder, firmware_change)
+from tests.device.timings import A2345_FAST
 from tests.protocol.a2345.fixtures import (
     REALTIME_OLD_FIRMWARE, STATUS_SNAPSHOT, THEME_STATUS)
 from tests.utils import MemoryStore, wait_until
 
-
-TIMINGS = A2345Timings(realtime_refresh=0.05, stale_after=0.15,
-                       telemetry_deadline=0.4, settings_retry=0.1,
-                       readback_delay=0.02, retry_initial=0.02,
-                       retry_max=0.05, tick=0.01, write_waits=(0.05, 0.1),
-                       priority_waits=(0.1,))
 
 SNAPSHOT_REQUEST = 0x0200
 THEME_REQUEST = 0x0202
@@ -39,7 +34,7 @@ def channel() -> FakeChannel:
 @pytest.fixture
 async def device(channel: FakeChannel) -> AsyncIterator[A2345Device]:
     info = DeviceInfo(serial='SERIAL123', name='Desk charger')
-    device = A2345Device(channel, info, timings=TIMINGS)
+    device = A2345Device(channel, info, timings=A2345_FAST)
     yield device
     await device.disconnect()
 
@@ -284,7 +279,7 @@ async def test_priority_write_is_sent_once(device: A2345Device,
 
 async def test_rejected_write_raises(channel: FakeChannel) -> None:
     channel.set_responder(charger_responder(status=4))
-    device = A2345Device(channel, timings=TIMINGS)
+    device = A2345Device(channel, timings=A2345_FAST)
     try:
         await connected(device)
         with pytest.raises(WriteRejectedError) as exc_info:

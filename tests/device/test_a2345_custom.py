@@ -11,7 +11,8 @@ from ankerprime.model import (
 from ankerprime.protocol.a2345.settings import PortProtocol
 from tests.device.account import FakeAccount
 from tests.device.charger import FakeChannel, charger_responder
-from tests.device.test_a2345_device import TIMINGS, connected
+from tests.device.test_a2345_device import connected
+from tests.device.timings import A2345_FAST
 from tests.utils import wait_until
 
 
@@ -40,7 +41,7 @@ def channel() -> FakeChannel:
 async def device(channel: FakeChannel, account: FakeAccount
                  ) -> AsyncIterator[A2345Device]:
     info = DeviceInfo(serial='SERIAL123')
-    device = A2345Device(channel, info, account=account, timings=TIMINGS)
+    device = A2345Device(channel, info, account=account, timings=A2345_FAST)
     yield device
     await device.disconnect()
 
@@ -105,7 +106,7 @@ async def test_apply_without_protocols(device: A2345Device,
 
 async def test_mainland_sends_huawei_as_scp(channel: FakeChannel) -> None:
     account = FakeAccount(mainland=True)
-    device = A2345Device(channel, account=account, timings=TIMINGS)
+    device = A2345Device(channel, account=account, timings=A2345_FAST)
     try:
         await loaded(device)
         channel.clear()

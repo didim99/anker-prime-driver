@@ -59,13 +59,26 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+The constructor, `login()` and `login_phone()` take the same
+`AccountOptions` (from `ankerprime.api`), all optional: the MQTT
+`connector`, `tls_factory` or `tls_directory`, the `on_authentication`
+listener, an `energy_store`, the chargers' `timings` and a `clock`.
+`options.replace(...)` copies them with some values changed.
+
 To avoid signing in on every start, keep the token: `account.authentication`
-and every renewed token passed to `on_authentication=` serialise with
-`to_document()`; restore with `Authentication.from_document(...)` and create
-the account directly with
-`CloudAccount(http, authentication, credentials=...)`. With `credentials`, an
-expired token is renewed by signing in again; without them an
-`AuthenticationError` reaches you.
+and every renewed token passed to the `on_authentication` listener serialize
+with `to_document()`; restore with `Authentication.from_document(...)` and
+create the account directly:
+
+```python
+options = AccountOptions(on_authentication=save_token,
+                         energy_store=JsonFileStore(Path('anker-data')))
+account = CloudAccount(http, authentication, credentials=credentials,
+                       options=options)
+```
+
+With `credentials`, an expired token is renewed by signing in again; without
+them an `AuthenticationError` reaches you.
 
 Mainland China accounts sign in by SMS on their own server, so the token
 cannot be renewed without a new code:
@@ -226,7 +239,8 @@ Behavior, following the official app:
 - writes wait for the acknowledgement, resend once and then raise
   `ChargerTimeoutError`; a refused write raises `WriteRejectedError`.
 
-Timings are adjustable with `A2345Timings`.
+Timings are adjustable with `A2345Timings` (`AccountOptions(timings=...)`);
+`replace(...)` copies them with some values changed.
 
 The account also keeps settings of each 250W: the custom mode setting
 (the app's Labs page), max compatibility, device identification and up to
@@ -301,8 +315,8 @@ Two modes:
   each command, then disconnects after a few seconds. A charger accepts one
   connection at a time, so this leaves room for the official app.
 
-Timings are adjustable with `A2687Timings`. The 160W support has not been
-run against a real charger by this project.
+Timings are adjustable with `A2687Timings` (`replace(...)` as above). The 160W
+support has not been run against a real charger by this project.
 
 Custom mode on the 160W takes C1–C3 limits (`product.custom_mode`: 0 or
 15–140 W, at most 160 W, profile number 1, no protocols or names):
@@ -327,7 +341,7 @@ Chargers do not report energy. Each device integrates power per port from
 every report (trapezoidal rule; gaps over two minutes count nothing) into
 counters that only grow, published as `state.energy`.
 
-With an `energy_store` (`CloudAccount(energy_store=...)`,
+With an `energy_store` (`AccountOptions(energy_store=...)`,
 `ble_charger(energy_store=...)`) the counters persist under the charger's
 serial: loaded on the first connect, saved every minute and on
 `disconnect`. Several processes may count the same charger into one store;

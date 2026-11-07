@@ -3,8 +3,9 @@
 from collections.abc import Collection, Iterable, Mapping
 from datetime import datetime
 
+from ankerprime.model.account import AccountSettings
 from ankerprime.model.capabilities import Capability, Verification
-from ankerprime.model.custom import AccountSettings, ChargingProfile
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import OutputId, PortId, Weekday
 from ankerprime.model.errors import InvalidParameterError
 from ankerprime.model.product import A2345, Product
@@ -15,13 +16,15 @@ from ankerprime.protocol.a2345.codes import (
     CABLE_RATINGS, CHARGING_MODE_CODES, CHARGING_PROTOCOLS,
     CLOCK_THEME_CODES, DEVICE_BRANDS, HOUR_FORMAT_CODES,
     KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES)
+from ankerprime.protocol.a2345.device_settings import DeviceSettings
 from ankerprime.protocol.a2345.frame import Message
 from ankerprime.protocol.a2345.messages import (
     RawPortReading, RealtimeTelemetry, StatusSnapshot, VersionInfo)
 from ankerprime.protocol.a2345.settings import (
-    PRIORITY_OFF, PRIORITY_PREFERRED, THEME_PICTURE_CODES, Capabilities,
-    ClockState, ClockWindow, CountdownUpdate, DeviceSettings,
-    OutputControl, OutputSwitchUpdate, PortSchedule, SettingsChange)
+    PRIORITY_OFF, PRIORITY_PREFERRED, THEME_PICTURE_CODES,
+    Capabilities, ClockState, ClockWindow, OutputControl, PortSchedule)
+from ankerprime.protocol.a2345.updates import (
+    CountdownUpdate, OutputSwitchUpdate, SettingsChange)
 from ankerprime.protocol.codes import decode_value, lookup
 
 

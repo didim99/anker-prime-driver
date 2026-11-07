@@ -3,11 +3,11 @@
 import pytest
 
 from ankerprime.model import PortId
+from ankerprime.protocol.a2345.fields import MessageError, MessageErrorKind
 from ankerprime.protocol.a2345.frame import Frame, Tlv, decode_frame
 from ankerprime.protocol.a2345.messages import (
-    MSG_STATUS_SNAPSHOT, PORTS, MessageError, MessageErrorKind,
-    RawPortReading, decode_acknowledgement, decode_realtime,
-    decode_status_snapshot, decode_version_info)
+    MSG_STATUS_SNAPSHOT, PORTS, RawPortReading, decode_acknowledgement,
+    decode_realtime, decode_status_snapshot, decode_version_info)
 from tests.protocol.a2345.fixtures import (
     REALTIME_ACKNOWLEDGEMENT, REALTIME_CHINA_FIRMWARE,
     REALTIME_NEW_FIRMWARE, REALTIME_OLD_FIRMWARE, VERSION_INFO)

@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from ankerprime.device.a2345 import A2345Device, A2345Timings
+from ankerprime.device.a2345 import A2345Device
 from ankerprime.model import (
     Capability, ChargerConnectionError, ChargerTimeoutError,
     ClockPicture, ClockTheme, DeviceInfo, InvalidParameterError,
@@ -16,7 +16,8 @@ from ankerprime.utils import u32le
 from tests.device.account import FakeAccount
 from tests.device.charger import (
     FakeChannel, Responder, charger_frame, charger_responder)
-from tests.device.test_a2345_device import TIMINGS, connected
+from tests.device.test_a2345_device import connected
+from tests.device.timings import A2345_FAST
 from tests.utils import wait_until
 
 
@@ -25,14 +26,7 @@ IMAGE_TIME_DISPLAY = 0x0222
 FOREST = ClockPicture(31, 'https://cdn/forest.jpg', 0x1A2B3C4D,
                       title='Forest', text_color=0xFF00FF00)
 SEA = ClockPicture(32, 'https://cdn/sea.jpg', 0xBEEF, title='Sea')
-PICTURE_TIMINGS = A2345Timings(
-    realtime_refresh=TIMINGS.realtime_refresh, stale_after=TIMINGS.stale_after,
-    telemetry_deadline=TIMINGS.telemetry_deadline,
-    settings_retry=TIMINGS.settings_retry,
-    readback_delay=TIMINGS.readback_delay, retry_initial=TIMINGS.retry_initial,
-    retry_max=TIMINGS.retry_max, tick=TIMINGS.tick,
-    write_waits=TIMINGS.write_waits, priority_waits=TIMINGS.priority_waits,
-    picture_download=0.2)
+PICTURE_TIMINGS = A2345_FAST.replace(picture_download=0.2)
 
 
 def download_report(picture_id: int, status: int, code: int = 3) -> bytes:

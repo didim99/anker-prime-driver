@@ -17,15 +17,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ankerprime.cloud.crypto import LoginCipher
+from ankerprime.cloud.json_api import post_json
 from ankerprime.cloud.regions import (
     CN_SERVER, MAINLAND_COUNTRY, PHONE_REGIONS,
     home_server, known_server, server_for)
+from ankerprime.cloud.values import parse_expiration
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.storage import JsonDocument
 from ankerprime.model.errors import (
-    AuthenticationError, ChargerConnectionError,
-    InvalidParameterError, ProtocolError)
-from ankerprime.utils import Clock, parse_json_object, utc_now
+    AuthenticationError, InvalidParameterError, ProtocolError)
+from ankerprime.utils import Clock, utc_now
 
 
 LOGIN_PATH = '/passport/login'
@@ -33,7 +34,6 @@ PHONE_CODE_PATH = '/passport/phone_verification_code'
 PHONE_LOGIN_PATH = '/passport/phone_verification_login'
 PHONE_NUMBER = re.compile(r'1[0-9]{10}')
 PHONE_CODE = re.compile(r'[0-9]{6}')
-# Mainland server messages can echo the input; these codes get own wording.
 PHONE_ERRORS = {
     26124: 'this phone number has no Anker account; register it in the '
            'Anker app and bind the charger first',
@@ -45,7 +45,6 @@ MAINLAND_HEADERS = {'model-type': 'PHONE', 'app-version': '3.23.0',
                     'language': 'zh-Hans', 'x-app-key': 'CN'}
 DOCUMENT_VERSION = 1
 VALIDITY_LEEWAY = timedelta(seconds=60)
-MILLISECOND_EPOCH_THRESHOLD = 100_000_000_000
 
 
 @dataclass(init=False)
@@ -238,14 +237,8 @@ class AccountClient:
     async def _post_phone(self, path: str, body: dict[str, Any]) -> Any:
         headers = base_headers(MAINLAND_COUNTRY, self._clock())
         payload = json.dumps(body).encode('utf-8')
-        response = await self._http.post(CN_SERVER + path, headers, payload)
-        if not 200 <= response.status < 300:
-            raise ChargerConnectionError(f'login HTTP {response.status}')
-        root = parse_json_object(response.body)
-        code = root.get('code', -1)
-        if code != 0:
-            message = PHONE_ERRORS.get(code, 'phone login refused')
-            raise AuthenticationError(f'{message} ({code})')
+        root = await post_json(self._http, CN_SERVER + path, headers, payload,
+                               name='login', refusal=_phone_refusal)
         return root.get('data')
 
     def _login_body(self, email: str, password: str, country: str) -> bytes:
@@ -262,14 +255,8 @@ class AccountClient:
     async def _post_login(self, server: str, body: bytes,
                           country: str) -> dict[str, Any]:
         headers = base_headers(country, self._clock())
-        response = await self._http.post(server + LOGIN_PATH, headers, body)
-        if not 200 <= response.status < 300:
-            raise ChargerConnectionError(f'login HTTP {response.status}')
-        root = parse_json_object(response.body)
-        code = root.get('code', -1)
-        if code != 0:
-            message = root.get('msg') or ''
-            raise AuthenticationError(f'login failed ({code}): {message}')
+        root = await post_json(self._http, server + LOGIN_PATH, headers, body,
+                               name='login', refusal=_login_refusal)
         data = root.get('data')
         if not isinstance(data, dict):
             raise ProtocolError('login response without data')
@@ -301,20 +288,6 @@ def gmt_offset(now: datetime) -> str:
     return f'GMT{sign}{hours:02d}:{rest // 60:02d}'
 
 
-def parse_expiration(value: object) -> datetime | None:
-    """Epoch seconds or milliseconds, as a number or string."""
-
-    try:
-        seconds = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    if not seconds > 0 or seconds == float('inf'):
-        return None
-    if seconds > MILLISECOND_EPOCH_THRESHOLD:
-        seconds /= 1000
-    return datetime.fromtimestamp(seconds, UTC)
-
-
 def _validate_login(email: str, password: str, country: str) -> None:
     if country in PHONE_REGIONS:
         raise InvalidParameterError('mainland China accounts sign in by '
@@ -323,6 +296,16 @@ def _validate_login(email: str, password: str, country: str) -> None:
         raise InvalidParameterError('invalid email address')
     if not password:
         raise InvalidParameterError('empty password')
+
+
+def _login_refusal(code: Any, message: Any) -> AuthenticationError:
+    return AuthenticationError(f'login failed ({code}): {message or ""}')
+
+
+def _phone_refusal(code: Any, message: Any) -> AuthenticationError:
+    # Mainland messages can echo the input; known codes get own wording.
+    wording = PHONE_ERRORS.get(code, 'phone login refused')
+    return AuthenticationError(f'{wording} ({code})')
 
 
 def _checked_phone(phone: str) -> str:

@@ -12,10 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from ankerprime.cloud.auth import Authentication, base_headers
+from ankerprime.cloud.json_api import post_json
+from ankerprime.cloud.values import optional_bool, optional_str
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.model.errors import (
     AuthenticationError, ChargerConnectionError, ProtocolError)
-from ankerprime.utils import Clock, parse_json_object
+from ankerprime.utils import Clock
 
 
 BOUND_DEVICES_PATH = 'power_service/v1/app/get_relate_and_bind_devices'
@@ -100,11 +102,11 @@ class BoundDevice:
         if not isinstance(serial, str) or not isinstance(product_code, str):
             return None
         return cls(serial, product_code,
-                   device_name=_optional_str(item, 'device_name'),
-                   alias_name=_optional_str(item, 'alias_name'),
-                   wifi_online=_optional_bool(item, 'wifi_online'),
-                   software_version=_optional_str(item, 'device_sw_version'),
-                   owner_user_id=_optional_str(item, 'owner_user_id'))
+                   device_name=optional_str(item, 'device_name'),
+                   alias_name=optional_str(item, 'alias_name'),
+                   wifi_online=optional_bool(item, 'wifi_online'),
+                   software_version=optional_str(item, 'device_sw_version'),
+                   owner_user_id=optional_str(item, 'owner_user_id'))
 
 
 @dataclass(init=False)
@@ -206,6 +208,14 @@ class CloudClient:
     def authentication(self) -> Authentication:
         return self._authentication
 
+    @property
+    def country(self) -> str:
+        return self._authentication.country
+
+    @property
+    def user_id(self) -> str:
+        return self._authentication.user_id
+
     async def bound_devices(self, product_code: str | None = None
                             ) -> list[BoundDevice]:
         """Chargers bound to or shared with the account, optionally filtered."""
@@ -263,18 +273,10 @@ class CloudClient:
         url = f'{authentication.server}/{_checked_path(path)}'
         payload = json.dumps(dict(body or {}),
                              separators=(',', ':')).encode('utf-8')
-        response = await self._http.post(url, request_headers, payload)
-        if response.status in AUTH_FAILURE_STATUSES:
-            raise AuthenticationError('Anker token rejected')
-        if not 200 <= response.status < 300:
-            raise ChargerConnectionError(f'cloud HTTP {response.status}')
-        root = parse_json_object(response.body)
-        code = root.get('code')
-        if code in AUTH_FAILURE_CODES:
-            raise AuthenticationError('Anker token rejected')
-        if code != 0:
-            raise ProtocolError(f'Anker cloud error {code}: '
-                                f'{root.get("msg") or ""}')
+        root = await post_json(self._http, url, request_headers, payload,
+                               name='cloud', refusal=_cloud_refusal,
+                               auth_statuses=AUTH_FAILURE_STATUSES,
+                               auth_codes=AUTH_FAILURE_CODES)
         return root.get('data')
 
     async def upload(self, url: str, body: bytes, content_type: str) -> None:
@@ -293,6 +295,10 @@ class CloudClient:
         if not isinstance(data, dict):
             raise ProtocolError('response without data')
         return data
+
+
+def _cloud_refusal(code: Any, message: Any) -> ProtocolError:
+    return ProtocolError(f'Anker cloud error {code}: {message or ""}')
 
 
 def normalize_pem(value: str, labels: tuple[str, ...]) -> str | None:
@@ -329,13 +335,3 @@ def _checked_path(path: str) -> str:
             or '?' in path or '#' in path):
         raise ProtocolError(f'invalid API path: {path}')
     return path
-
-
-def _optional_str(item: Mapping[str, Any], key: str) -> str | None:
-    value = item.get(key)
-    return value if isinstance(value, str) else None
-
-
-def _optional_bool(item: Mapping[str, Any], key: str) -> bool | None:
-    value = item.get(key)
-    return value if isinstance(value, bool) else None

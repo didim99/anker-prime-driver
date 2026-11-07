@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from ankerprime.cli.main import EXIT_AUTHENTICATION, EXIT_ERROR
-from tests.cli.test_commands import Cli
+from tests.cli.harness import Cli
 from tests.cloud.fakes import SMS_CODE, FakeAnkerCloud
 from tests.device.charger import charger_responder
 from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt

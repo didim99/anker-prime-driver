@@ -10,10 +10,11 @@ from ankerprime.model import (
     OutputId, PortId, Schedule, ScreenTimeout, Weekday)
 from ankerprime.protocol.a2345.frame import Tlv, decode_frame
 from ankerprime.protocol.a2345.messages import UnknownMessage, decode_message
-from ankerprime.protocol.a2345.settings import (
-    ChargingModeUpdate, CountdownUpdate, OutputSwitchUpdate,
-    SettingField, SettingsChange, ValueUpdate)
+from ankerprime.protocol.a2345.settings import SettingField
 from ankerprime.protocol.a2345.tracker import StateTracker
+from ankerprime.protocol.a2345.updates import (
+    ChargingModeUpdate, CountdownUpdate,
+    OutputSwitchUpdate, SettingsChange, ValueUpdate)
 from tests.protocol.a2345.fixtures import (
     REALTIME_CHINA_FIRMWARE, REALTIME_OLD_FIRMWARE,
     STATUS_SNAPSHOT, VERSION_INFO)

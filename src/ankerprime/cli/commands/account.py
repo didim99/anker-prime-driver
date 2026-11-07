@@ -1,11 +1,10 @@
 """Account commands: login, logout, regions, devices."""
 
 import argparse
-import getpass
-import sys
 
 from ankerprime.cli.base import CliContext, Command
 from ankerprime.cli.render import render_devices, render_table
+from ankerprime.cli.terminal import read_secret
 from ankerprime.cloud.auth import AccountClient, AccountCredentials
 from ankerprime.cloud.regions import REGIONS, PHONE_REGIONS, server_for
 from ankerprime.model.errors import InvalidParameterError
@@ -26,7 +25,8 @@ class LoginCommand(Command):
         if country in PHONE_REGIONS:
             raise InvalidParameterError('mainland China accounts sign in '
                                         'with "ankerprime login-phone"')
-        password = _read_password(args.password_stdin)
+        password = read_secret('Anker password: ',
+                               from_stdin=args.password_stdin, hidden=True)
         credentials = AccountCredentials(args.email, password, country)
         async with context.http() as http:
             authentication = await AccountClient(http).login(
@@ -73,7 +73,8 @@ class PhoneLoginCommand(Command):
                 context.print(f'SMS code sent to {args.phone}.')
                 if args.send_only:
                     return 0
-                code = _read_code(args.code_stdin)
+                code = read_secret('SMS code: ', from_stdin=args.code_stdin,
+                                   hidden=False)
             authentication = await client.login_phone(args.phone, code)
         await context.config.save_login(authentication, None)
         context.print(painter.good(f'Signed in as user {authentication.user_id}'
@@ -136,15 +137,3 @@ class DevicesCommand(Command):
             devices = await account.bound_devices()
         context.print(render_devices(devices, painter=context.painter))
         return 0
-
-
-def _read_code(from_stdin: bool) -> str:
-    if from_stdin:
-        return sys.stdin.readline().strip()
-    return input('SMS code: ').strip()
-
-
-def _read_password(from_stdin: bool) -> str:
-    if from_stdin:
-        return sys.stdin.readline().rstrip('\r\n')
-    return getpass.getpass('Anker password: ')

@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from ankerprime.device.a2687 import A2687Device, A2687Timings
+from ankerprime.device.a2687 import A2687Device
 from ankerprime.model.capabilities import Capability
 from ankerprime.model.enums import (
     ChargingMode, DisplayLanguage, FixedAllocation,
@@ -19,14 +19,10 @@ from ankerprime.protocol.a2687.codes import (
     OP_PORT_TIMER, OP_READ_ALL, OP_REALTIME_TRIGGER, OP_USER_AUTH)
 from ankerprime.session.a2687 import A2687Session
 from tests.device.a2687_charger import SimulatedCharger, SimulatedLink
+from tests.device.timings import A2687_FAST
 from tests.utils import MemoryStore, wait_until
 
 
-TIMINGS = A2687Timings(poll_interval=0.05, stale_after=0.15,
-                       telemetry_deadline=0.3, opening_spacing=0.0,
-                       reply_timeout=0.2, retry_max=0.05,
-                       update_interval=0.2, linger=0.05, energy_save=10.0,
-                       tick=0.01)
 INFO = DeviceInfo(name='Desk charger')
 
 
@@ -47,7 +43,7 @@ def make_device(link: SimulatedLink, *, keep_connection: bool = True,
                            time_zone=lambda: 'UTC0', stage_timeout=0.1)
     return A2687Device(session, INFO, keep_connection=keep_connection,
                        country='DE', owner_id=owner_id,
-                       energy_store=energy_store, timings=TIMINGS)
+                       energy_store=energy_store, timings=A2687_FAST)
 
 
 @pytest.fixture

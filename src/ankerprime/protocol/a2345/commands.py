@@ -17,12 +17,12 @@ from ankerprime.model.errors import InvalidParameterError
 from ankerprime.model.state import ClockSchedule, Schedule
 from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
-    KNOB_DIRECTION_CODES, SCHEDULE_SLOT_CODES,
-    GROUPS, SCREEN_TIMEOUT_CODES, USB_C_GROUPS, group_code)
+    KNOB_DIRECTION_CODES, SCHEDULE_SLOT_CODES, GROUPS,
+    SCREEN_TIMEOUT_CODES, USB_C_GROUPS, group_code)
 from ankerprime.protocol.a2345.frame import CLOUD_SESSION, encode_request
 from ankerprime.protocol.a2345.settings import (
-    ACK_PREFIX, CUSTOM_CHARGING_MODE_CODE,
-    CustomProfile, PortProtocol, WriteAcknowledgement)
+    ACK_PREFIX, CUSTOM_CHARGING_MODE_CODE, CustomProfile, PortProtocol)
+from ankerprime.protocol.a2345.updates import WriteAcknowledgement
 from ankerprime.protocol.codes import encode_value
 from ankerprime.utils import u32le
 

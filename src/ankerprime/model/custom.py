@@ -1,4 +1,4 @@
-"""Custom charging mode: profiles, their limits and account settings.
+"""Custom charging mode: profiles and their limits.
 
 A custom profile caps the power of every output; the 250W keeps up to four
 of them in the Anker account and also lets each USB-C port allow or block
@@ -384,48 +384,3 @@ class CustomModeRules:
         if mainland and exclusive <= limit.protocols:
             raise InvalidParameterError(
                 f'{limit.output} cannot allow both PD 12V and Xiaomi')
-
-
-@dataclass(init=False)
-class AccountSettings:
-    """Charger settings the Anker account keeps; None when not reported."""
-
-    _custom_mode_enabled: bool | None
-    _max_compatibility: bool | None
-    _device_identification: bool | None
-
-    def __init__(self, *, custom_mode_enabled: bool | None = None,
-                 max_compatibility: bool | None = None,
-                 device_identification: bool | None = None):
-        self._custom_mode_enabled = custom_mode_enabled
-        self._max_compatibility = max_compatibility
-        self._device_identification = device_identification
-
-    @property
-    def custom_mode_enabled(self) -> bool | None:
-        """The app's Labs switch that makes custom mode available."""
-
-        return self._custom_mode_enabled
-
-    @property
-    def max_compatibility(self) -> bool | None:
-        return self._max_compatibility
-
-    @property
-    def device_identification(self) -> bool | None:
-        return self._device_identification
-
-    def replace(self, *, custom_mode_enabled: bool | None = None,
-                max_compatibility: bool | None = None,
-                device_identification: bool | None = None
-                ) -> AccountSettings:
-        def pick(new: bool | None, old: bool | None) -> bool | None:
-            return old if new is None else new
-
-        return AccountSettings(
-            custom_mode_enabled=pick(custom_mode_enabled,
-                                     self._custom_mode_enabled),
-            max_compatibility=pick(max_compatibility,
-                                   self._max_compatibility),
-            device_identification=pick(device_identification,
-                                       self._device_identification))

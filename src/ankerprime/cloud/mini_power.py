@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import zlib
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any, Protocol
 
-from ankerprime.cloud.client import CloudClient
+from ankerprime.cloud.regions import MAINLAND_COUNTRY
+from ankerprime.cloud.values import (
+    flexible_bool, flexible_int, hex_u32, prefixed_u32)
+from ankerprime.interfaces.account import ChargerAccount
+from ankerprime.model.account import AccountSettings
 from ankerprime.model.custom import (
-    AccountSettings, ChargingProfile,
-    CustomModeRules, CustomPortLimit, CustomProtocol)
+    ChargingProfile, CustomModeRules, CustomPortLimit, CustomProtocol)
 from ankerprime.model.enums import OutputId, ProductCode
 from ankerprime.model.errors import ProtocolError
 from ankerprime.model.pictures import ClockPicture
@@ -68,15 +71,32 @@ PROTOCOL_KEYS = {
 }
 
 
-class MiniPowerClient:
-    """Account-side settings and custom profiles of one 250W."""
+class CloudRequester(Protocol):
+    """Authenticated requests: ``CloudClient``, or the account's re-login."""
 
-    _client: CloudClient
+    @property
+    def country(self) -> str:
+        pass
+
+    @property
+    def user_id(self) -> str:
+        pass
+
+    async def request(self, path: str, body: Mapping[str, Any] | None = None,
+                      headers: Mapping[str, str] | None = None) -> Any:
+        pass
+
+    async def upload(self, url: str, body: bytes, content_type: str) -> None:
+        pass
+
+
+class MiniPowerClient(ChargerAccount):
+    """Account-side settings, custom profiles and pictures of one 250W."""
+
+    _client: CloudRequester
     _serial: str
 
-    MAINLAND_COUNTRY: ClassVar[str] = 'CN'
-
-    def __init__(self, client: CloudClient, serial: str):
+    def __init__(self, client: CloudRequester, serial: str):
         self._client = client
         self._serial = serial
 
@@ -84,8 +104,7 @@ class MiniPowerClient:
     def mainland(self) -> bool:
         """The account is served by the mainland China server."""
 
-        country = self._client.authentication.country
-        return country.upper() == self.MAINLAND_COUNTRY
+        return self._client.country.upper() == MAINLAND_COUNTRY
 
     async def settings(self) -> AccountSettings:
         data = await self._client.request(SETTINGS_PATH, self._serial_body())
@@ -199,7 +218,7 @@ class MiniPowerClient:
         registration with the link's key and the file's CRC-32.
         """
 
-        user_id = self._client.authentication.user_id
+        user_id = self._client.user_id
         ticket = await self._client.request(
             UPLOAD_TICKET_PATH,
             {'file_name': UPLOAD_FILE_NAME,
@@ -301,55 +320,6 @@ def decode_picture(item: Mapping[str, Any], *, category: str = '',
                         title=title if isinstance(title, str) else '',
                         category=category,
                         text_color=hex_u32(item.get('text_color')), own=own)
-
-
-def hex_u32(value: object) -> int | None:
-    """``"0x1a2b3c4d"``, ``"1a2b3c4d"`` or a number."""
-
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value & 0xFFFFFFFF
-    if not isinstance(value, str):
-        return None
-    text = value.strip().lower().removeprefix('0x')
-    try:
-        return int(text, 16) & 0xFFFFFFFF
-    except ValueError:
-        return None
-
-
-def prefixed_u32(value: object) -> int | None:
-    """Hex with a ``0x`` prefix, decimal without, or a number."""
-
-    if isinstance(value, str) and not value.strip().lower().startswith('0x'):
-        try:
-            return int(value.strip()) & 0xFFFFFFFF
-        except ValueError:
-            return None
-    return hex_u32(value)
-
-
-def flexible_int(value: object) -> int | None:
-    """Anker sends the same number as an int, a string or a bool."""
-
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return None
-    return None
-
-
-def flexible_bool(value: object) -> bool | None:
-    number = flexible_int(value)
-    return None if number is None else number == 1
 
 
 def _output_named(name: object) -> OutputId | None:

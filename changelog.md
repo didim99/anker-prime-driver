@@ -65,6 +65,10 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
   profiles use the mainland limits and protocols.
 - CLI: `login-phone NUMBER [--send-only | --code CODE] [--code-stdin]`;
   `regions` points mainland China to it.
+- `AccountOptions` (`ankerprime.api`): the options of `CloudAccount` in one
+  value; `CloudAccount.options`.
+- `replace(**changes)` on `A2345Timings`, `A2687Timings` and
+  `ScreenPictureTimings`.
 
 ### Changed
 - `HttpClient.put()` is abstract and `Charger` has new abstract methods:
@@ -78,6 +82,19 @@ are experimental: implemented from Charker, not yet confirmed on hardware.
 - 250W: switching the clock while a picture is shown resends that picture
   instead of failing; `set_clock()` with a picture theme raises
   `InvalidParameterError` (use `apply_clock_picture()`).
+- `CloudAccount(...)`, `CloudAccount.login()` and `login_phone()` take
+  `options=AccountOptions(...)` instead of the keyword arguments
+  `connector`, `tls_factory`, `tls_directory`, `on_authentication`,
+  `energy_store`, `timings` and `clock`; `credentials` and
+  `keep_credentials` stay.
+- Internal restructuring without behavior changes: a shared runtime base
+  for both devices; the 250W's account settings, profiles and clock
+  pictures as collaborators of the device; one JSON request path for every
+  Anker API call and the JSON value helpers in `cloud.values`; the A2345
+  settings protocol split into `settings`, `updates`, `device_settings` and
+  `fields` with one field reader; `AccountSettings` in `model.account`
+  (still exported from `ankerprime.model`); CLI commands with actions share
+  one base.
 
 ## [0.7.3] - 2026-11-07
 

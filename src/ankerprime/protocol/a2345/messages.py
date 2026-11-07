@@ -7,16 +7,17 @@ preserved in ``unknown_fields``.
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import StrEnum
 from types import MappingProxyType
 
 from ankerprime.model.enums import PortId
-from ankerprime.model.errors import ProtocolError
+from ankerprime.protocol.a2345.device_settings import DeviceSettings
+from ankerprime.protocol.a2345.fields import (
+    FieldReader, MessageError, MessageErrorKind)
 from ankerprime.protocol.a2345.frame import (
     TAG_SESSION, TAG_TIMESTAMP, VALUE_TYPE_BYTES,
     VALUE_TYPE_U32, Frame, Message, Tlv)
-from ankerprime.protocol.a2345.settings import (
-    DeviceSettings, decode_settings_change, decode_write_acknowledgement)
+from ankerprime.protocol.a2345.updates import (
+    decode_settings_change, decode_write_acknowledgement)
 
 
 MSG_REALTIME = 0x0303
@@ -42,40 +43,6 @@ VALUE_TYPE_STRING = 0x00
 PORT_PAYLOAD_LENGTH = 7
 SLOT_LENGTH = 4
 ACK_FRAME_LENGTH = 14
-
-
-class MessageErrorKind(StrEnum):
-    """Reason a message could not be decoded."""
-
-    UNEXPECTED_MESSAGE_TYPE = 'unexpected_message_type'
-    MISSING_FIELD = 'missing_field'
-    DUPLICATE_FIELD = 'duplicate_field'
-    INVALID_FIELD_LENGTH = 'invalid_field_length'
-    UNEXPECTED_FIELD_TYPE = 'unexpected_field_type'
-    INVALID_UTF8 = 'invalid_utf8'
-    INVALID_ACK_LENGTH = 'invalid_ack_length'
-
-
-class MessageError(ProtocolError):
-    """A valid frame does not carry the expected message."""
-
-    _kind: MessageErrorKind
-    _tag: int | None
-
-    def __init__(self, kind: MessageErrorKind, detail: str,
-                 tag: int | None = None):
-        where = f' in field {tag:#04x}' if tag is not None else ''
-        super().__init__(f'invalid A2345 message ({kind}){where}: {detail}')
-        self._kind = kind
-        self._tag = tag
-
-    @property
-    def kind(self) -> MessageErrorKind:
-        return self._kind
-
-    @property
-    def tag(self) -> int | None:
-        return self._tag
 
 
 @dataclass(init=False)
@@ -362,61 +329,6 @@ class Acknowledgement(Message):
     @property
     def marker(self) -> int:
         return self._marker
-
-
-class FieldReader:
-    """Field lookup over one frame that remembers which fields were consumed."""
-
-    _frame: Frame
-    _consumed: set[int]
-
-    def __init__(self, frame: Frame):
-        self._frame = frame
-        self._consumed = set()
-
-    def required(self, tag: int) -> Tlv:
-        """Return the only field with the tag; raises when absent or repeated."""
-
-        field = self.optional(tag)
-        if field is None:
-            raise MessageError(MessageErrorKind.MISSING_FIELD, 'absent', tag)
-        return field
-
-    def optional(self, tag: int) -> Tlv | None:
-        """Return the only field with the tag or None; raises when repeated."""
-
-        indexes = self._indexes(tag)
-        if len(indexes) > 1:
-            raise MessageError(MessageErrorKind.DUPLICATE_FIELD,
-                               f'{len(indexes)} occurrences', tag)
-        if not indexes:
-            return None
-        self._consumed.add(indexes[0])
-        return self._frame.fields[indexes[0]]
-
-    def unique(self, tag: int) -> Tlv | None:
-        """Return the only field with the tag, or None when absent or repeated.
-
-        The field is not consumed; call ``consume`` once it decoded.
-        """
-
-        indexes = self._indexes(tag)
-        return self._frame.fields[indexes[0]] if len(indexes) == 1 else None
-
-    def consume(self, tag: int) -> None:
-        """Mark every field with the tag as interpreted."""
-
-        self._consumed.update(self._indexes(tag))
-
-    def unconsumed(self) -> list[Tlv]:
-        """Fields not interpreted, in wire order."""
-
-        return [field for index, field in enumerate(self._frame.fields)
-                if index not in self._consumed]
-
-    def _indexes(self, tag: int) -> list[int]:
-        return [index for index, field in enumerate(self._frame.fields)
-                if field.tag == tag]
 
 
 def decode_message(frame: Frame) -> Message:

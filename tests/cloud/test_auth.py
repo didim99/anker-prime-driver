@@ -5,9 +5,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from ankerprime.cloud.auth import (
-    AccountClient, AccountCredentials,
-    Authentication, gmt_offset, parse_expiration)
+    AccountClient, AccountCredentials, Authentication, gmt_offset)
 from ankerprime.cloud.regions import CN_SERVER, COM_SERVER, EU_SERVER
+from ankerprime.cloud.values import parse_expiration
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
     AuthenticationError, ChargerConnectionError,

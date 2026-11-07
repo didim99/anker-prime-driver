@@ -13,8 +13,10 @@ from ankerprime.device import a2687
 from ankerprime.device.a2687 import A2687Timings
 from ankerprime.interfaces.channel import Channel
 from ankerprime.transport.ble import DiscoveredCharger
+from tests.cli.harness import Cli
 from tests.cloud.fakes import FakeAnkerCloud
 from tests.device.a2687_charger import SimulatedCharger, SimulatedLink
+from tests.transport.fakes import FakeMqttConnector
 from tests.utils import Terminal
 
 
@@ -37,8 +39,6 @@ class BluetoothCli:
         return code, out.getvalue()
 
     def login(self) -> None:
-        from tests.cli.test_commands import Cli
-        from tests.transport.fakes import FakeMqttConnector
         cli = Cli(self.config_dir, FakeAnkerCloud(), FakeMqttConnector(None))
         cli.login()
 

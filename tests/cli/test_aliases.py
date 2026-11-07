@@ -1,8 +1,6 @@
 """Named chargers and the default charger in the CLI."""
 
-import io
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -10,23 +8,8 @@ import pytest
 from ankerprime.cli.aliases import (
     ChargerAlias, ChargerAliases, Connection)
 from ankerprime.cli.main import EXIT_ERROR
+from tests.cli.harness import Cli
 from tests.cli.test_bluetooth import ADDRESS, BluetoothCli
-from tests.cli.test_commands import Cli
-from tests.cloud.fakes import FakeAnkerCloud
-from tests.device.charger import charger_responder
-from tests.transport.fakes import FakeMqttConnector, charger_over_mqtt
-
-
-@pytest.fixture
-def password(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setattr('sys.stdin', io.StringIO('secret\n'))
-    yield
-
-
-@pytest.fixture
-def cli(tmp_path: Path, password: None) -> Cli:
-    connector = FakeMqttConnector(charger_over_mqtt(charger_responder()))
-    return Cli(tmp_path / 'config', FakeAnkerCloud(), connector)
 
 
 def stored(config_dir: Path) -> dict[str, object]:

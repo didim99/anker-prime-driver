@@ -28,25 +28,26 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Collection, Coroutine, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
-from ankerprime.device.base import BaseCharger
+from ankerprime.device.a2345_account import AccountFeatures
+from ankerprime.device.a2345_pictures import PictureFeatures
+from ankerprime.device.running import RunningCharger
 from ankerprime.energy.recorder import EnergyRecorder
 from ankerprime.energy.store import EnergyStore
 from ankerprime.interfaces.account import ChargerAccount
 from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.model.capabilities import Capability
-from ankerprime.model.custom import (
-    AccountSettings, ChargingProfile, CustomModeRules)
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, HourFormat, KnobDirection,
-    OutputId, PortId, ScheduleSlot, ScreenTimeout)
+    OutputId, ScheduleSlot, ScreenTimeout)
 from ankerprime.model.errors import (
-    AnkerPrimeError, AuthenticationError, ChargerConnectionError,
-    ChargerTimeoutError, InvalidParameterError, PictureTransferError,
-    ProtocolError, UnsupportedCapabilityError, WriteRejectedError)
+    AnkerPrimeError, AuthenticationError,
+    ChargerConnectionError, ChargerTimeoutError,
+    InvalidParameterError, ProtocolError, WriteRejectedError)
 from ankerprime.model.pictures import ClockPicture
 from ankerprime.model.product import A2345
 from ankerprime.model.state import ClockSchedule, DeviceInfo, Schedule
@@ -54,30 +55,25 @@ from ankerprime.protocol.a2345 import commands
 from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
     KNOB_DIRECTION_CODES, SCREEN_TIMEOUT_CODES)
-from ankerprime.protocol.a2345.commands import (
-    DEFAULT_TEXT_COLOR, MAX_URL_LENGTH, Command)
+from ankerprime.protocol.a2345.commands import Command
 from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import (
     RealtimeTelemetry, StatusSnapshot, decode_message)
 from ankerprime.protocol.a2345.settings import (
-    CUSTOM_CHARGING_MODE_CODE, Capabilities,
-    ChargingModeUpdate, ClockState, ClockUpdate, CountdownUpdate,
-    CustomProfile, FirmwareVersionUpdate, OutputSwitchUpdate, PortSchedule,
-    PriorityUpdate, ScheduleUpdate, SettingField, SettingsChange,
-    SettingsUpdate, ThemeDownloadUpdate, ValueUpdate, WriteAcknowledgement)
+    ClockState, PortSchedule, SettingField)
 from ankerprime.protocol.a2345.tracker import StateTracker
+from ankerprime.protocol.a2345.updates import (
+    ChargingModeUpdate, ClockUpdate, CountdownUpdate, FirmwareVersionUpdate,
+    OutputSwitchUpdate, PriorityUpdate, ScheduleUpdate, SettingsChange,
+    SettingsUpdate, ThemeDownloadUpdate, ValueUpdate, WriteAcknowledgement)
 from ankerprime.protocol.codes import decode_value, encode_value
-from ankerprime.utils import Clock, redact, utc_now
+from ankerprime.utils import Clock, copy_with, monotonic, redact, utc_now
 
 
 logger = logging.getLogger(__name__)
 
 WriteKey = tuple[int, OutputId | None, ScheduleSlot | None]
 
-JPEG_MAGIC = b'\xff\xd8\xff'
-DOWNLOAD_FAILED = 0
-DOWNLOAD_DONE = 1
-DOWNLOAD_NEEDS_BLUETOOTH = 4
 
 
 @dataclass(init=False)
@@ -207,6 +203,10 @@ class A2345Timings:
         exponent = min(max(failures - 1, 0), 16)
         return min(self._retry_initial * float(1 << exponent), self._retry_max)
 
+    def replace(self, **changes: Any) -> Self:
+        """A copy with the given timings changed."""
+
+        return copy_with(self, changes)
 
 class _PendingWrite:
     """A write waiting for its acknowledgement."""
@@ -228,44 +228,20 @@ class _PendingWrite:
         return self._future
 
 
-class _PendingDownload:
-    """A clock picture whose download report is awaited."""
-
-    _picture_id: int
-    _future: asyncio.Future[None]
-
-    def __init__(self, picture_id: int, future: asyncio.Future[None]):
-        self._picture_id = picture_id
-        self._future = future
-
-    @property
-    def picture_id(self) -> int:
-        return self._picture_id
-
-    @property
-    def future(self) -> asyncio.Future[None]:
-        return self._future
-
-
-class A2345Device(BaseCharger, ChannelListener):
+class A2345Device(RunningCharger, ChannelListener):
     """One A2345 behind a channel carrying plain FF09 frames."""
 
     _channel: Channel
     _info: DeviceInfo
     _account: ChargerAccount | None
     _timings: A2345Timings
-    _clock: Clock
 
     _tracker: StateTracker
     _available: bool
 
-    _energy: EnergyRecorder
-
     _supervisor: asyncio.Task[None] | None
     _maintenance: asyncio.Task[None] | None
     _readback: asyncio.Task[None] | None
-    _tasks: set[asyncio.Task[Any]]
-    _saver: asyncio.Task[None] | None
 
     _link_lost: asyncio.Event
     _stopping: bool
@@ -280,34 +256,29 @@ class A2345Device(BaseCharger, ChannelListener):
     _pending: list[_PendingWrite]
     _write_locks: dict[WriteKey, asyncio.Lock]
 
-    _account_settings: AccountSettings | None
-    _profiles: tuple[ChargingProfile, ...] | None
-    _account_lock: asyncio.Lock
-    _catalogue: tuple[ClockPicture, ...] | None
-    _download: _PendingDownload | None
+    _features: AccountFeatures
+    _pictures: PictureFeatures
 
     def __init__(self, channel: Channel, info: DeviceInfo | None = None, *,
                  account: ChargerAccount | None = None,
                  energy_store: EnergyStore | None = None,
                  timings: A2345Timings | None = None,
                  clock: Clock | None = None):
-        super().__init__(A2345)
+        info = info or DeviceInfo()
+        timings = timings or A2345Timings()
+        energy = EnergyRecorder((spec.port for spec in A2345.ports),
+                                energy_store, label=redact(info.serial),
+                                save_interval=timings.energy_save)
+        super().__init__(A2345, energy, clock or utc_now)
         self._channel = channel
-        self._info = info or DeviceInfo()
+        self._info = info
         self._account = account
-        self._timings = timings or A2345Timings()
-        self._clock = clock or utc_now
+        self._timings = timings
         self._tracker = StateTracker(A2345)
         self._available = False
-        self._energy = EnergyRecorder((spec.port for spec in A2345.ports),
-                                      energy_store,
-                                      label=redact(self._info.serial),
-                                      save_interval=self._timings.energy_save)
         self._supervisor = None
         self._maintenance = None
         self._readback = None
-        self._tasks = set()
-        self._saver = None
         self._link_lost = asyncio.Event()
         self._stopping = False
         self._failures = 0
@@ -319,11 +290,15 @@ class A2345Device(BaseCharger, ChannelListener):
         self._settings_fresh = False
         self._pending = []
         self._write_locks = {}
-        self._account_settings = None
-        self._profiles = None
-        self._account_lock = asyncio.Lock()
-        self._catalogue = None
-        self._download = None
+        self._features = AccountFeatures(
+            account, A2345.custom_mode, write=self._write,
+            device_settings=lambda: self._tracker.settings,
+            publish=self._publish_state, label=lambda: self._label,
+            custom_waits=self._timings.custom_waits)
+        self._pictures = PictureFeatures(
+            self._features.require, write=self._write,
+            device_settings=lambda: self._tracker.settings,
+            download_timeout=self._timings.picture_download)
         self._publish_state()
 
     @property
@@ -335,7 +310,7 @@ class A2345Device(BaseCharger, ChannelListener):
             message = decode_message(decode_frame(data))
         except ProtocolError as error:
             logger.debug('ignored frame from %s: %s',
-                         redact(self._info.serial), error)
+                         self._label, error)
             return
         if isinstance(message, WriteAcknowledgement):
             self._resolve(message)
@@ -345,7 +320,7 @@ class A2345Device(BaseCharger, ChannelListener):
         if isinstance(message, SettingsChange):
             for update in message.updates:
                 if isinstance(update, ThemeDownloadUpdate):
-                    self._on_download(update)
+                    self._pictures.on_download(update)
         if isinstance(message, RealtimeTelemetry):
             self._record_energy(message)
         if isinstance(message, (RealtimeTelemetry, StatusSnapshot)):
@@ -360,7 +335,7 @@ class A2345Device(BaseCharger, ChannelListener):
     def on_closed(self, error: Exception | None) -> None:
         if not self._stopping:
             if error is not None:
-                logger.debug('link to %s lost: %s', redact(self._info.serial),
+                logger.debug('link to %s lost: %s', self._label,
                              error)
             self._link_lost.set()
 
@@ -378,30 +353,14 @@ class A2345Device(BaseCharger, ChannelListener):
 
     async def disconnect(self) -> None:
         self._stopping = True
-        tasks = [task for task in (self._supervisor, self._maintenance,
-                                   self._readback, *self._tasks)
-                 if task is not None]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await self._cancel_tasks(self._supervisor, self._maintenance,
+                                 self._readback)
         self._supervisor = None
         self._maintenance = None
         self._readback = None
-        self._saver = None
-        self._tasks.clear()
         await self._channel.close()
         self._energy.interrupt()
         self._end_link(ChargerConnectionError('disconnected'))
-        await self._save_energy()
-
-    async def reset_energy(self, ports: Collection[PortId] | None = None
-                           ) -> None:
-        unknown = set(ports or ()) - set(self._energy.counters)
-        if unknown:
-            names = ', '.join(sorted(port.value for port in unknown))
-            raise InvalidParameterError(f'{A2345.code} has no port {names}')
-        self._energy.reset(ports, self._clock())
-        self._publish_state()
         await self._save_energy()
 
     async def refresh(self) -> None:
@@ -409,7 +368,7 @@ class A2345Device(BaseCharger, ChannelListener):
             raise ChargerConnectionError('charger is not connected')
         await self._request_settings()
         if self._account is not None:
-            self._spawn(self._load_account())
+            self._spawn(self._features.load())
 
     async def _set_output(self, output: OutputId, on: bool) -> None:
         await self._write(commands.set_output(output, on),
@@ -492,11 +451,8 @@ class A2345Device(BaseCharger, ChannelListener):
         if clock is not None and theme in (ClockTheme.PICTURE,
                                            ClockTheme.CUSTOM):
             # Switching resends the current theme, so the picture is needed.
-            picture = await self._current_picture(clock)
-            command = _picture_command(enabled, picture, toggle=True)
-            expected = ClockState(enabled, holiday and enabled,
-                                  CLOCK_THEME_CODES[theme],
-                                  theme_id=picture.picture_id)
+            command, expected = await self._pictures.switch_command(
+                enabled, clock, theme)
         else:
             url = commands.builtin_theme_url(theme)
             command = commands.set_clock_theme(enabled, theme, url=url)
@@ -512,255 +468,51 @@ class A2345Device(BaseCharger, ChannelListener):
         await self._write(commands.set_holiday_theme(enabled))
 
     async def _set_max_compatibility(self, enabled: bool) -> None:
-        # Max compatibility and device identification exclude each other.
-        if enabled and self._switched_on(SettingField.DEVICE_IDENTIFICATION):
-            await self._store_identification(False)
-        await self._store_compatibility(enabled)
+        await self._features.set_max_compatibility(enabled)
 
     async def _set_device_identification(self, enabled: bool) -> None:
-        if enabled and self._switched_on(SettingField.MAX_COMPATIBILITY):
-            await self._store_compatibility(False)
-        await self._store_identification(enabled)
+        await self._features.set_device_identification(enabled)
 
     async def _set_ufcs(self, enabled: bool) -> None:
         update = ValueUpdate(SettingField.UFCS, int(enabled))
         await self._write(commands.set_ufcs(enabled), [update])
 
     async def _apply_custom_profile(self, profile: ChargingProfile) -> None:
-        mainland = self._mainland
-        self._rules.validate(profile, mainland)
-        settings = self._tracker.settings
-        with_protocols = (profile.protocols_enabled and settings is not None
-                          and settings.supports(Capabilities.PORT_PROTOCOLS)
-                          and not settings.supports(
-                              Capabilities.PROTOCOL_MANAGEMENT))
-        command = commands.apply_custom_profile(profile, mainland=mainland,
-                                                with_protocols=with_protocols)
-        reported = CustomProfile(profile.number, profile.auto_exit,
-                                 command.fields[0xA3][2:])
-        update = ChargingModeUpdate(CUSTOM_CHARGING_MODE_CODE, reported)
-        await self._write(command, [update],
-                          waits=self._timings.custom_waits)
+        await self._features.apply_profile(profile)
 
     async def _exit_custom_mode(self) -> None:
-        await self._write(commands.exit_custom_charging_mode())
+        await self._features.exit_mode()
 
     async def _set_custom_mode_enabled(self, enabled: bool) -> None:
-        account = self._require_account()
-        await account.set_custom_mode_enabled(enabled)
-        self._update_account(custom_mode_enabled=enabled)
-        settings = self._tracker.settings
-        if not enabled and settings is not None and (
-                settings.custom_charging_mode):
-            await self._exit_custom_mode()
+        await self._features.set_enabled(enabled)
 
     async def _save_custom_profile(self, profile: ChargingProfile) -> None:
-        account = self._require_account()
-        mainland = account.mainland
-        rules = self._rules
-        profile = rules.normalize(profile, mainland)
-        rules.validate(profile, mainland)
-        stored = await self._stored_profile(profile.number)
-        if stored is None:
-            await account.add_profile(profile, rules)
-        else:
-            profile = profile.replace(profile_id=stored.profile_id)
-            await account.update_profile(profile, rules)
-        await self._reload_custom_profiles()
-        if self._active_profile() == profile.number:
-            await self._apply_custom_profile(profile)
+        await self._features.save(profile)
 
     async def _delete_custom_profile(self, number: int) -> None:
-        account = self._require_account()
-        stored = await self._stored_profile(number)
-        if stored is None or stored.profile_id is None:
-            raise InvalidParameterError(f'no stored custom profile {number}')
-        if self._active_profile() == number:
-            # Only removed from the account once the charger has left it.
-            await self._exit_custom_mode()
-        await account.delete_profile(stored.profile_id)
-        await self._reload_custom_profiles()
+        await self._features.delete(number)
 
     async def _reload_custom_profiles(self) -> None:
-        account = self._require_account()
-        async with self._account_lock:
-            settings = await account.settings()
-            profiles = await account.profiles()
-        self._account_settings = settings
-        self._profiles = tuple(profiles)
-        self._publish_state()
+        await self._features.reload()
 
     async def _clock_pictures(self, language: str
                               ) -> tuple[ClockPicture, ...]:
-        account = self._require_account(Capability.CLOCK_PICTURE)
-        pictures = tuple(await account.clock_pictures(language))
-        self._catalogue = pictures
-        return pictures
+        return await self._pictures.catalogue(language)
 
     async def _own_clock_pictures(self) -> tuple[ClockPicture, ...]:
-        account = self._require_account(Capability.OWN_CLOCK_PICTURES)
-        return tuple(await account.own_pictures())
+        return await self._pictures.own()
 
     async def _apply_clock_picture(self, picture: ClockPicture) -> None:
-        if picture.own:
-            # Own picture links are signed for a few minutes only.
-            picture = await self._own_picture(picture.picture_id)
-        command = _picture_command(True, picture, toggle=False)
-        # No await between this check and claiming the slot.
-        if self._download is not None and not self._download.future.done():
-            raise InvalidParameterError('another picture is downloading')
-        future = asyncio.get_running_loop().create_future()
-        download = _PendingDownload(picture.picture_id, future)
-        self._download = download
-        try:
-            await self._write(command, include_theme=True)
-            await asyncio.wait_for(future, self._timings.picture_download)
-        except TimeoutError:
-            raise ChargerTimeoutError(
-                'the charger did not report the picture download') from None
-        finally:
-            if self._download is download:
-                self._download = None
+        await self._pictures.apply(picture)
 
     async def _upload_clock_picture(self, jpeg: bytes) -> None:
-        account = self._require_account(Capability.OWN_CLOCK_PICTURES)
-        if not jpeg.startswith(JPEG_MAGIC):
-            raise InvalidParameterError('own pictures must be JPEG files')
-        pictures = await account.own_pictures()
-        if len(pictures) >= ClockPicture.OWN_LIMIT:
-            raise InvalidParameterError(
-                f'the account keeps at most {ClockPicture.OWN_LIMIT} '
-                'own pictures')
-        await account.upload_own_picture(jpeg)
+        await self._pictures.upload(jpeg)
 
     async def _delete_clock_picture(self, picture_id: int) -> None:
-        account = self._require_account(Capability.OWN_CLOCK_PICTURES)
-        await account.delete_own_picture(picture_id)
+        await self._pictures.delete(picture_id)
 
     async def _set_picture_time(self, enabled: bool) -> None:
-        settings = self._tracker.settings
-        clock = settings.clock if settings is not None else None
-        expected = [ClockUpdate(clock, enabled)] if clock is not None else []
-        await self._write(commands.set_image_time_display(enabled), expected,
-                          include_theme=True)
-
-    async def _current_picture(self, clock: ClockState) -> ClockPicture:
-        """The picture the clock shows, looked up in the account."""
-
-        if clock.theme_id is None:
-            raise InvalidParameterError('current clock picture unknown')
-        if clock.theme_code == CLOCK_THEME_CODES[ClockTheme.CUSTOM]:
-            return await self._own_picture(clock.theme_id)
-        catalogue = self._catalogue
-        if catalogue is None:
-            catalogue = await self._clock_pictures('en')
-        for picture in catalogue:
-            if picture.picture_id == clock.theme_id:
-                return picture
-        raise InvalidParameterError(
-            f'clock picture {clock.theme_id} is not in the catalogue')
-
-    async def _own_picture(self, picture_id: int) -> ClockPicture:
-        for picture in await self._own_clock_pictures():
-            if picture.picture_id == picture_id:
-                return picture
-        raise InvalidParameterError(f'no own picture {picture_id}')
-
-    def _on_download(self, update: ThemeDownloadUpdate) -> None:
-        download = self._download
-        if download is None or download.future.done():
-            return
-        if update.theme_id is not None and (
-                update.theme_id != download.picture_id):
-            return
-        if update.status == DOWNLOAD_DONE:
-            download.future.set_result(None)
-        elif update.status == DOWNLOAD_FAILED:
-            download.future.set_exception(PictureTransferError(
-                'the charger could not download the picture'))
-        elif update.status == DOWNLOAD_NEEDS_BLUETOOTH:
-            download.future.set_exception(PictureTransferError(
-                'the charger asks for the picture over Bluetooth, '
-                'which this library cannot send'))
-
-    @property
-    def _rules(self) -> CustomModeRules:
-        rules = self._product.custom_mode
-        if rules is None:
-            raise UnsupportedCapabilityError(Capability.CUSTOM_CHARGING_MODE)
-        return rules
-
-    @property
-    def _mainland(self) -> bool:
-        return self._account is not None and self._account.mainland
-
-    def _require_account(self, capability: Capability
-                         = Capability.CUSTOM_PROFILES) -> ChargerAccount:
-        if self._account is None:
-            raise UnsupportedCapabilityError(capability)
-        return self._account
-
-    def _active_profile(self) -> int | None:
-        settings = self._tracker.settings
-        if settings is None or not settings.custom_charging_mode:
-            return None
-        profile = settings.custom_profile
-        return profile.number if profile is not None else None
-
-    async def _stored_profile(self, number: int) -> ChargingProfile | None:
-        if self._profiles is None:
-            await self._reload_custom_profiles()
-        for profile in self._profiles or ():
-            if profile.number == number:
-                return profile
-        return None
-
-    async def _load_account(self) -> None:
-        """Read the account's values; a failure leaves the previous ones."""
-
-        try:
-            await self._reload_custom_profiles()
-        except AnkerPrimeError as error:
-            logger.debug('account settings of %s not read: %s',
-                         redact(self._info.serial), error)
-
-    def _update_account(self, **changes: bool) -> None:
-        current = self._account_settings or AccountSettings()
-        self._account_settings = current.replace(**changes)
-        self._publish_state()
-
-    def _switched_on(self, field: SettingField) -> bool:
-        """Account value first, then what the charger reports."""
-
-        account = self._account_settings
-        settings = self._tracker.settings
-        stored = reported = None
-        if field == SettingField.MAX_COMPATIBILITY:
-            if account is not None:
-                stored = account.max_compatibility
-            if settings is not None:
-                reported = settings.max_compatibility
-        else:
-            if account is not None:
-                stored = account.device_identification
-            if settings is not None:
-                reported = settings.device_identification
-        return bool(stored if stored is not None else reported)
-
-    async def _store_compatibility(self, enabled: bool) -> None:
-        if self._account is not None:
-            await self._account.set_max_compatibility(enabled)
-            self._update_account(max_compatibility=enabled)
-        update = ValueUpdate(SettingField.MAX_COMPATIBILITY, int(enabled))
-        await self._write(commands.set_max_compatibility(enabled), [update])
-
-    async def _store_identification(self, enabled: bool) -> None:
-        if self._account is not None:
-            await self._account.set_device_identification(enabled)
-            self._update_account(device_identification=enabled)
-        update = ValueUpdate(SettingField.DEVICE_IDENTIFICATION, int(enabled))
-        await self._write(commands.set_device_identification(enabled),
-                          [update])
+        await self._pictures.set_time(enabled)
 
     async def _open_link(self) -> None:
         """Open the channel and send the initial requests."""
@@ -768,7 +520,7 @@ class A2345Device(BaseCharger, ChannelListener):
         self._link_lost = asyncio.Event()
         self._channel.set_listener(self)
         await self._channel.open()
-        now = _monotonic()
+        now = monotonic()
         self._opened_at = now
         self._last_telemetry = None
         self._settings_fresh = False
@@ -782,7 +534,7 @@ class A2345Device(BaseCharger, ChannelListener):
         self._maintenance = asyncio.create_task(
             self._maintain(self._link_lost), name='ankerprime-a2345-maintenance')
         if self._account is not None:
-            self._spawn(self._load_account())
+            self._spawn(self._features.load())
 
     async def _supervise(self) -> None:
         """Reopen the link after every loss, with growing delays."""
@@ -798,16 +550,16 @@ class A2345Device(BaseCharger, ChannelListener):
                     break
                 except AuthenticationError as error:
                     logger.warning('reconnecting %s needs new credentials',
-                                   redact(self._info.serial))
+                                   self._label)
                     self._last_error = error
                     self._publish_state()
                     return
                 except AnkerPrimeError as error:
                     logger.debug('reconnecting %s failed: %s',
-                                 redact(self._info.serial), error)
+                                 self._label, error)
                 except Exception:
                     logger.exception('unexpected error reconnecting %s',
-                                     redact(self._info.serial))
+                                     self._label)
 
     async def _close_link(self) -> None:
         maintenance = self._maintenance
@@ -821,9 +573,7 @@ class A2345Device(BaseCharger, ChannelListener):
         for pending in self._pending:
             if not pending.future.done():
                 pending.future.set_exception(error)
-        download = self._download
-        if download is not None and not download.future.done():
-            download.future.set_exception(error)
+        self._pictures.fail(error)
         self._settings_fresh = False
         self._available = False
         self._publish_state()
@@ -834,11 +584,11 @@ class A2345Device(BaseCharger, ChannelListener):
         timings = self._timings
         while not link_lost.is_set():
             await asyncio.sleep(timings.tick)
-            now = _monotonic()
+            now = monotonic()
             reference = self._last_telemetry or self._opened_at
             if now - reference >= timings.telemetry_deadline:
                 logger.debug('no telemetry from %s; recycling the link',
-                             redact(self._info.serial))
+                             self._label)
                 link_lost.set()
                 return
             fresh = (self._last_telemetry is not None
@@ -848,9 +598,7 @@ class A2345Device(BaseCharger, ChannelListener):
                 self._publish_state()
             if self._settings_due(now):
                 self._spawn(self._request_settings())
-            if self._energy.save_due(now) and (self._saver is None
-                                               or self._saver.done()):
-                self._saver = self._spawn(self._save_energy())
+            self._save_energy_if_due(now)
             if now - self._last_trigger >= timings.realtime_refresh:
                 self._last_trigger = now
                 try:
@@ -860,7 +608,7 @@ class A2345Device(BaseCharger, ChannelListener):
 
     def _on_telemetry(self, message: RealtimeTelemetry | StatusSnapshot
                       ) -> None:
-        now = _monotonic()
+        now = monotonic()
         self._last_telemetry = now
         self._failures = 0
         self._available = True
@@ -885,14 +633,10 @@ class A2345Device(BaseCharger, ChannelListener):
     def _record_energy(self, message: RealtimeTelemetry) -> None:
         powers = {port: reading.power
                   for port, reading in message.ports.items()}
-        self._energy.record(_monotonic(), powers)
-
-    async def _save_energy(self) -> None:
-        if await self._energy.save(_monotonic(), self._clock()):
-            self._publish_state()
+        self._energy.record(monotonic(), powers)
 
     async def _request_settings(self) -> None:
-        self._settings_requested_at = _monotonic()
+        self._settings_requested_at = monotonic()
         await self._send(commands.status_snapshot())
         await self._send(commands.theme_status())
 
@@ -964,7 +708,7 @@ class A2345Device(BaseCharger, ChannelListener):
             pass
 
     async def _send(self, command: Command) -> None:
-        timestamp = int(self._clock().timestamp())
+        timestamp = self._timestamp()
         try:
             await self._channel.send(command.encode(timestamp))
         except ChargerConnectionError:
@@ -975,25 +719,13 @@ class A2345Device(BaseCharger, ChannelListener):
         if not self._channel.is_open or not self._settings_fresh:
             raise ChargerConnectionError('charger is not ready for writes')
 
-    def _spawn(self, coroutine: Coroutine[Any, Any, None]
-               ) -> asyncio.Task[None]:
-        # The coroutine runs as the task itself: a task cancelled before its
-        # first step then closes it cleanly, where a wrapper would leave it
-        # never awaited.
-        task = asyncio.create_task(coroutine)
-        self._tasks.add(task)
-        task.add_done_callback(self._finished)
-        return task
+    @property
+    def _label(self) -> str:
+        return redact(self._info.serial)
 
-    def _finished(self, task: asyncio.Task[None]) -> None:
-        self._tasks.discard(task)
-        if task.cancelled():
-            return
-        error = task.exception()
-        if error is None or isinstance(error, ChargerConnectionError):
-            return
-        logger.error('unexpected error in a task of %s',
-                     redact(self._info.serial), exc_info=error)
+    def _task_failed(self, error: BaseException) -> bool:
+        # A lost link is handled by the supervisor.
+        return isinstance(error, ChargerConnectionError)
 
     def _publish_state(self) -> None:
         unavailable: tuple[Capability, ...] = ()
@@ -1004,37 +736,8 @@ class A2345Device(BaseCharger, ChannelListener):
         state = self._tracker.build(info=self._info,
                                     available=self._available,
                                     energy=self._energy.counters,
-                                    account=self._account_settings,
-                                    profiles=self._profiles,
+                                    account=self._features.settings,
+                                    profiles=self._features.profiles,
                                     unavailable=unavailable)
         self._publish(state)
 
-
-def _picture_command(clock_on: bool, picture: ClockPicture, *,
-                     toggle: bool) -> Command:
-    """``0x0205`` showing a picture, as the official app builds it.
-
-    A catalogue picture goes in the theme URL field with its text colour.
-    An own picture's link goes in the long custom field, except when only
-    switching the clock: then in the theme URL field if it fits.
-    """
-
-    if not picture.own:
-        color = picture.text_color
-        return commands.set_clock_theme(
-            clock_on, ClockTheme.PICTURE, theme_id=picture.picture_id,
-            image_crc=picture.crc32, url=picture.image_url,
-            text_color=DEFAULT_TEXT_COLOR if color is None else color)
-    url = picture.image_url
-    fits = len(url.encode('utf-8')) <= MAX_URL_LENGTH
-    if toggle and fits:
-        return commands.set_clock_theme(
-            clock_on, ClockTheme.CUSTOM, theme_id=picture.picture_id,
-            image_crc=picture.crc32, url=url)
-    return commands.set_clock_theme(
-        clock_on, ClockTheme.CUSTOM, theme_id=picture.picture_id,
-        image_crc=picture.crc32, custom_url=url)
-
-
-def _monotonic() -> float:
-    return asyncio.get_running_loop().time()

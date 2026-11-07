@@ -5,8 +5,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from ankerprime.device.a2687 import (
-    A2687Device, A2687Timings, ScreenPictureTimings)
+from ankerprime.device.a2687 import A2687Device
 from ankerprime.model import (
     A2687, ChargingMode, ChargingProfile, CustomModeRules, CustomPortLimit,
     InvalidParameterError, OutputId, PictureTransferError, WriteRejectedError)
@@ -16,18 +15,11 @@ from ankerprime.protocol.a2687.codes import (
 from ankerprime.session.a2687 import A2687Session
 from tests.device.a2687_charger import SimulatedCharger, SimulatedLink
 from tests.device.test_a2687_device import INFO, connected
+from tests.device.timings import A2687_FAST, SCREEN_PICTURE_FAST
 from tests.utils import wait_until
 
 
-PICTURE_TIMINGS = ScreenPictureTimings(
-    settle_after_select=0.0, settle_after_start=0.0, chunk_spacing=0.0,
-    acknowledgement_timeout=0.2, settle_before_verify=0.0,
-    verify_attempts=2, verify_delay=0.01)
-TIMINGS = A2687Timings(poll_interval=0.05, stale_after=0.15,
-                       telemetry_deadline=0.3, opening_spacing=0.0,
-                       reply_timeout=0.2, retry_max=0.05,
-                       update_interval=0.2, linger=0.05, energy_save=10.0,
-                       tick=0.01, screen_picture=PICTURE_TIMINGS)
+TIMINGS = A2687_FAST.replace(screen_picture=SCREEN_PICTURE_FAST)
 # 25 slices: checkpoints after slices 9, 19 and the last.
 JPEG = b'\xff\xd8\xff' + bytes(range(256)) * 15
 

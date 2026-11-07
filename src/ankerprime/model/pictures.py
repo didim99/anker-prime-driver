@@ -8,6 +8,10 @@ from typing import ClassVar
 from ankerprime.model.enums import ClockTheme
 
 
+JPEG_MAGIC = b'\xff\xd8\xff'
+"""Start of every JPEG file; uploads check it."""
+
+
 @dataclass(init=False)
 class ClockPicture:
     """One picture the 250W can show behind its clock.

@@ -7,8 +7,7 @@ import pytest
 
 from ankerprime.cloud.client import CloudClient
 from ankerprime.cloud.mini_power import (
-    MiniPowerClient, decode_picture, decode_profile,
-    flexible_bool, flexible_int, hex_u32, prefixed_u32)
+    MiniPowerClient, decode_picture, decode_profile)
 from ankerprime.interfaces.http import HttpResponse
 from ankerprime.model import (
     A2345, ChargerConnectionError, CustomModeRules,
@@ -160,20 +159,6 @@ def test_decode_profile_by_position_and_flexible_values() -> None:
     assert profile.watts(OutputId.USB_A) == 15
 
 
-@pytest.mark.parametrize('value, expected', [
-    (1, 1), ('2', 2), (True, 1), (3.0, 3), (2.5, None), ('x', None),
-    (None, None),
-])
-def test_flexible_int(value: object, expected: int | None) -> None:
-    assert flexible_int(value) == expected
-
-
-def test_flexible_bool() -> None:
-    assert flexible_bool('1') is True
-    assert flexible_bool(0) is False
-    assert flexible_bool(None) is None
-
-
 async def test_clock_picture_catalogue() -> None:
     server = FakeMiniPower()
     client, http = make_client(server)
@@ -249,20 +234,6 @@ async def test_failed_upload_stops_before_registering() -> None:
     with pytest.raises(ChargerConnectionError, match='403'):
         await client.upload_own_picture(b'\xff\xd8\xff')
     assert len(http.requests) == 2
-
-
-@pytest.mark.parametrize('value, expected', [
-    ('0x1A', 0x1A), ('1a', 0x1A), (26, 26), ('zz', None), (True, None),
-])
-def test_hex_u32(value: object, expected: int | None) -> None:
-    assert hex_u32(value) == expected
-
-
-@pytest.mark.parametrize('value, expected', [
-    ('0x10', 16), ('10', 10), (7, 7), ('x', None), (None, None),
-])
-def test_prefixed_u32(value: object, expected: int | None) -> None:
-    assert prefixed_u32(value) == expected
 
 
 def test_decode_picture_needs_id_and_link() -> None:

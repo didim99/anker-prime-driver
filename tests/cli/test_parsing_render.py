@@ -20,8 +20,8 @@ from ankerprime.model import (
 from ankerprime.model.serialize import state_to_dict
 from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import decode_message
-from ankerprime.protocol.a2345.settings import CountdownUpdate, SettingsChange
 from ankerprime.protocol.a2345.tracker import StateTracker
+from ankerprime.protocol.a2345.updates import CountdownUpdate, SettingsChange
 from tests.protocol.a2345.fixtures import (
     REALTIME_CHINA_FIRMWARE, STATUS_SNAPSHOT)
 

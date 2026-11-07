@@ -7,8 +7,8 @@ tests use an in-memory fake.
 
 from abc import ABC, abstractmethod
 
-from ankerprime.model.custom import (
-    AccountSettings, ChargingProfile, CustomModeRules)
+from ankerprime.model.account import AccountSettings
+from ankerprime.model.custom import ChargingProfile, CustomModeRules
 from ankerprime.model.pictures import ClockPicture
 
 

@@ -7,8 +7,8 @@ from ankerprime.model import (
     OutputId, Schedule, ScheduleSlot, ScreenTimeout, Weekday)
 from ankerprime.protocol.a2345 import commands
 from ankerprime.protocol.a2345.frame import decode_frame
-from ankerprime.protocol.a2345.settings import (
-    CustomProfile, PortProtocol, WriteAcknowledgement)
+from ankerprime.protocol.a2345.settings import CustomProfile, PortProtocol
+from ankerprime.protocol.a2345.updates import WriteAcknowledgement
 from ankerprime.protocol.ff09 import checksum
 from tests.protocol.a2345.fixtures import (
     REALTIME_TRIGGER_REQUEST, REQUEST_EPOCH,

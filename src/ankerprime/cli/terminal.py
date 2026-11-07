@@ -1,6 +1,8 @@
-"""In-place redrawing of a block of terminal lines (ANSI escapes)."""
+"""Terminal input and output: secrets, in-place redrawn blocks (ANSI)."""
 
+import getpass
 import shutil
+import sys
 from typing import Self, TextIO
 
 from ankerprime.cli.style import truncate_visible
@@ -43,3 +45,18 @@ class TerminalBlock:
         self._out.write(prefix + CLEAR_BELOW + '\n'.join(lines) + '\n')
         self._out.flush()
         self._lines = len(lines)
+
+
+def read_secret(prompt: str, *, from_stdin: bool, hidden: bool) -> str:
+    """A password or a one-time code, typed or piped to standard input.
+
+    Hidden input (a password) is typed unseen and kept as typed apart from
+    the line end; visible input (a code) is trimmed.
+    """
+
+    if from_stdin:
+        line = sys.stdin.readline()
+        return line.rstrip('\r\n') if hidden else line.strip()
+    if hidden:
+        return getpass.getpass(prompt)
+    return input(prompt).strip()

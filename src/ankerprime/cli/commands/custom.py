@@ -2,7 +2,8 @@
 
 import argparse
 
-from ankerprime.cli.base import ChargerCommand, CliContext
+from ankerprime.cli.base import (
+    Action, ChargerActionCommand, ChargerCommand, CliContext)
 from ankerprime.cli.commands.control import confirm
 from ankerprime.cli.parsing import enum_converter, parse_output, parse_switch
 from ankerprime.cli.render import render_table
@@ -51,7 +52,30 @@ def parse_port_protocols(text: str
     return output, protocols
 
 
-class CustomModeCommand(ChargerCommand):
+def _number_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('number', type=int)
+
+
+def _add_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('number', type=int, help='1-4')
+    parser.add_argument('name', help='up to 20 characters')
+    _profile_options(parser)
+
+
+def _edit_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('number', type=int)
+    parser.add_argument('--name', help='up to 20 characters')
+    _profile_options(parser)
+
+
+def _set_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument('--number', type=int, default=1,
+                        help='profile number shown by the charger '
+                             '(250W: 1-4; default 1)')
+    _profile_options(parser)
+
+
+class CustomModeCommand(ChargerActionCommand):
     """Lists, edits and applies custom profiles; sets limits directly.
 
     The 250W keeps profiles in the Anker account; ``apply`` writes one to
@@ -62,79 +86,82 @@ class CustomModeCommand(ChargerCommand):
     NAME = 'custom-mode'
     HELP = 'custom charging mode: profiles (250W) or limits (both)'
 
-    async def run_charger(self, context: CliContext, charger: Charger,
-                          args: argparse.Namespace) -> int:
-        action = args.action or 'list'
-        if action == 'exit':
-            await charger.exit_custom_mode()
-            confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
-                    'Custom mode left.')
-            return 0
-        if action == 'set':
-            rules = _rules(charger)
-            profile = apply_options(rules.template(args.number, 'Custom'),
-                                    args)
-            await charger.apply_custom_profile(profile)
-            limits = ', '.join(f'{_port_label(rule.output)} '
-                               f'{profile.watts(rule.output)} W'
-                               for rule in rules.ports)
-            confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
-                    f'Custom mode set: {limits}.')
-            return 0
-        if action == 'list' and not charger.supports(
-                Capability.CUSTOM_PROFILES):
+    DEFAULT_ACTION = 'list'
+    ACTIONS = (
+        Action('list', 'show the stored profiles'),
+        Action('show', 'show one profile in detail', _number_argument),
+        Action('add', 'store a new profile, starting from the defaults',
+               _add_arguments),
+        Action('edit', 'change a stored profile', _edit_arguments),
+        Action('delete', 'remove a stored profile', _number_argument),
+        Action('apply', 'switch to custom mode with a profile',
+               _number_argument),
+        Action('set', 'switch to custom mode with these limits, unstored '
+                      '(defaults: the Anker app\'s)', _set_arguments),
+        Action('exit', 'leave custom mode'),
+    )
+
+    async def run_list(self, context: CliContext, charger: Charger,
+                       args: argparse.Namespace) -> int:
+        if not charger.supports(Capability.CUSTOM_PROFILES):
             context.print('This charger keeps no profiles; set limits with '
                           '"ankerprime custom-mode set --c1 W ...".')
             return 0
         await charger.reload_custom_profiles()
-        match action:
-            case 'list':
-                context.print(render_profiles(charger, context.painter))
-            case 'show':
-                context.print(render_profile(_stored(charger, args.number),
-                                             charger, context.painter))
-            case 'add' | 'edit':
-                await self._save(context, charger, args)
-            case 'delete':
-                _stored(charger, args.number)
-                await charger.delete_custom_profile(args.number)
-                confirm(context, charger, Capability.CUSTOM_PROFILES,
-                        f'Profile {args.number} deleted.')
-            case 'apply':
-                profile = _stored(charger, args.number)
-                await charger.apply_custom_profile(profile)
-                confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
-                        f'Profile {profile.number} "{profile.name}" '
-                        'applied.')
+        context.print(render_profiles(charger, context.painter))
         return 0
 
-    def add_charger_arguments(self, parser: argparse.ArgumentParser) -> None:
-        actions = parser.add_subparsers(dest='action', metavar='action')
-        actions.add_parser('list', help='show the stored profiles')
-        show = actions.add_parser('show', help='show one profile in detail')
-        show.add_argument('number', type=int)
-        add = actions.add_parser(
-            'add', help='store a new profile, starting from the defaults')
-        add.add_argument('number', type=int, help='1-4')
-        add.add_argument('name', help='up to 20 characters')
-        _profile_options(add)
-        edit = actions.add_parser('edit', help='change a stored profile')
-        edit.add_argument('number', type=int)
-        edit.add_argument('--name', help='up to 20 characters')
-        _profile_options(edit)
-        delete = actions.add_parser('delete', help='remove a stored profile')
-        delete.add_argument('number', type=int)
-        apply = actions.add_parser('apply',
-                                   help='switch to custom mode with a profile')
-        apply.add_argument('number', type=int)
-        limits = actions.add_parser(
-            'set', help='switch to custom mode with these limits, unstored '
-                        '(defaults: the Anker app\'s)')
-        limits.add_argument('--number', type=int, default=1,
-                            help='profile number shown by the charger '
-                                 '(250W: 1-4; default 1)')
-        _profile_options(limits)
-        actions.add_parser('exit', help='leave custom mode')
+    async def run_show(self, context: CliContext, charger: Charger,
+                       args: argparse.Namespace) -> int:
+        await charger.reload_custom_profiles()
+        context.print(render_profile(_stored(charger, args.number), charger,
+                                     context.painter))
+        return 0
+
+    async def run_add(self, context: CliContext, charger: Charger,
+                      args: argparse.Namespace) -> int:
+        await charger.reload_custom_profiles()
+        await self._save(context, charger, args)
+        return 0
+
+    run_edit = run_add
+
+    async def run_delete(self, context: CliContext, charger: Charger,
+                         args: argparse.Namespace) -> int:
+        await charger.reload_custom_profiles()
+        _stored(charger, args.number)
+        await charger.delete_custom_profile(args.number)
+        confirm(context, charger, Capability.CUSTOM_PROFILES,
+                f'Profile {args.number} deleted.')
+        return 0
+
+    async def run_apply(self, context: CliContext, charger: Charger,
+                        args: argparse.Namespace) -> int:
+        await charger.reload_custom_profiles()
+        profile = _stored(charger, args.number)
+        await charger.apply_custom_profile(profile)
+        confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
+                f'Profile {profile.number} "{profile.name}" applied.')
+        return 0
+
+    async def run_set(self, context: CliContext, charger: Charger,
+                      args: argparse.Namespace) -> int:
+        rules = _rules(charger)
+        profile = apply_options(rules.template(args.number, 'Custom'), args)
+        await charger.apply_custom_profile(profile)
+        limits = ', '.join(f'{_port_label(rule.output)} '
+                           f'{profile.watts(rule.output)} W'
+                           for rule in rules.ports)
+        confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
+                f'Custom mode set: {limits}.')
+        return 0
+
+    async def run_exit(self, context: CliContext, charger: Charger,
+                       args: argparse.Namespace) -> int:
+        await charger.exit_custom_mode()
+        confirm(context, charger, Capability.CUSTOM_CHARGING_MODE,
+                'Custom mode left.')
+        return 0
 
     async def _save(self, context: CliContext, charger: Charger,
                     args: argparse.Namespace) -> None:

@@ -14,7 +14,7 @@ from ankerprime.protocol.a2687.codes import (
     OP_BIND_SUCCESS, OP_CHARGING_MODE, OP_PORT_OUTPUT, OP_PORT_TIMER,
     OP_READ_ALL, OP_REALTIME_TRIGGER, SESSION_ACTION, SESSION_GROUP)
 from ankerprime.protocol.a2687.tlv import (
-    encode_fields, typed_bytes, typed_u8)
+    encode_fields, typed_bytes, typed_u8, typed_u32)
 from ankerprime.utils import u32le
 
 
@@ -71,9 +71,13 @@ def negotiation(opcode: int, fields: Iterable[tuple[int, bytes]],
 
 
 def session(opcode: int, fields: Iterable[tuple[int, bytes]],
-            timestamp: int) -> OutgoingMessage:
+            timestamp: int, *, typed_timestamp: bool = False
+            ) -> OutgoingMessage:
+    """A session command; the screen picture commands type the timestamp."""
+
+    stamp = typed_u32(timestamp) if typed_timestamp else u32le(timestamp)
     all_fields = [(FIELD_A1, bytes((SESSION_ACTION,))), *fields,
-                  (FIELD_TIMESTAMP, u32le(timestamp))]
+                  (FIELD_TIMESTAMP, stamp)]
     return OutgoingMessage(SESSION_GROUP, opcode, encode_fields(all_fields),
                            Encryption.SESSION)
 

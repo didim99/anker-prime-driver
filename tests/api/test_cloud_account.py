@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ankerprime.api import CloudAccount
+from ankerprime.api import AccountOptions, CloudAccount
 from ankerprime.cloud.auth import AccountCredentials, Authentication
 from ankerprime.cloud.client import BoundDevice
 from ankerprime.cloud.regions import CN_SERVER, EU_SERVER
@@ -33,11 +33,13 @@ async def make_account(server: FakeAnkerCloud,
                        on_authentication: Callable[[Authentication], None]
                        | None = None) -> CloudAccount:
     http = FakeHttpClient(server)
-    return await CloudAccount.login(
-        http, CREDENTIALS, keep_credentials=keep_credentials,
-        connector=connector or FakeMqttConnector(), tls_factory=no_tls,
-        on_authentication=on_authentication, timings=TIMINGS,
-        clock=lambda: NOW)
+    options = AccountOptions(connector=connector or FakeMqttConnector(),
+                             tls_factory=no_tls,
+                             on_authentication=on_authentication,
+                             timings=TIMINGS, clock=lambda: NOW)
+    return await CloudAccount.login(http, CREDENTIALS,
+                                    keep_credentials=keep_credentials,
+                                    options=options)
 
 
 async def test_login_and_device_listing() -> None:
@@ -144,9 +146,11 @@ async def test_charger_reads_account_settings_with_relogin() -> None:
 async def test_phone_login_uses_the_mainland_server() -> None:
     server = FakeAnkerCloud()
     http = FakeHttpClient(server)
-    account = await CloudAccount.login_phone(
-        http, '13800138000', SMS_CODE, connector=FakeMqttConnector(),
-        tls_factory=no_tls, timings=TIMINGS, clock=lambda: NOW)
+    options = AccountOptions(connector=FakeMqttConnector(),
+                             tls_factory=no_tls, timings=TIMINGS,
+                             clock=lambda: NOW)
+    account = await CloudAccount.login_phone(http, '13800138000', SMS_CODE,
+                                             options=options)
     assert account.authentication.server == CN_SERVER
     devices = await account.bound_devices()
     assert len(devices) == 2
@@ -162,5 +166,17 @@ async def test_phone_login_uses_the_mainland_server() -> None:
 async def test_phone_login_with_a_wrong_code() -> None:
     http = FakeHttpClient(FakeAnkerCloud())
     with pytest.raises(AuthenticationError):
-        await CloudAccount.login_phone(http, '13800138000', '000000',
-                                       clock=lambda: NOW)
+        await CloudAccount.login_phone(
+            http, '13800138000', '000000',
+            options=AccountOptions(clock=lambda: NOW))
+
+
+def test_options_replace_keeps_the_rest() -> None:
+    connector = FakeMqttConnector()
+    options = AccountOptions(connector=connector, timings=TIMINGS)
+    changed = options.replace(clock=lambda: NOW)
+    assert changed.clock() == NOW
+    assert changed.connector is connector and changed.timings is TIMINGS
+    assert options.clock is not changed.clock
+    with pytest.raises(TypeError):
+        options.replace(unknown=1)

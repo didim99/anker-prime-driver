@@ -11,7 +11,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, TextIO
 
-from ankerprime.api.cloud import CLOUD_PRODUCTS, CloudAccount
+from ankerprime.api.cloud import CLOUD_PRODUCTS, AccountOptions, CloudAccount
 from ankerprime.cli.aliases import (
     ChargerAlias, Connection, parse_alias_name, parse_country)
 from ankerprime.cli.config import CliConfig
@@ -119,12 +119,12 @@ class CliContext:
         credentials = await self._config.credentials()
         energy_store = self._config.energy_store(save_energy)
         async with self._http_factory() as http:
+            options = AccountOptions(connector=self._connector,
+                                     tls_factory=self._tls_factory,
+                                     on_authentication=self._remember,
+                                     energy_store=energy_store)
             account = CloudAccount(http, authentication,
-                                   credentials=credentials,
-                                   connector=self._connector,
-                                   tls_factory=self._tls_factory,
-                                   on_authentication=self._remember,
-                                   energy_store=energy_store)
+                                   credentials=credentials, options=options)
             try:
                 yield account
             finally:
@@ -360,6 +360,94 @@ class ChargerCommand(Command):
         """Execute on the connected charger and return the exit code."""
 
         pass
+
+
+@dataclass(init=False)
+class Action:
+    """One action of a command: ``custom-mode apply 2``.
+
+    Its handler is the command's ``run_<name>`` method (dashes become
+    underscores); ``arguments`` declares the action's own arguments.
+    """
+
+    _name: str
+    _help: str
+    _arguments: Callable[[argparse.ArgumentParser], None] | None
+
+    def __init__(self, name: str, help: str,
+                 arguments: Callable[[argparse.ArgumentParser], None]
+                 | None = None):
+        self._name = name
+        self._help = help
+        self._arguments = arguments
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def help(self) -> str:
+        return self._help
+
+    @property
+    def arguments(self) -> Callable[[argparse.ArgumentParser], None] | None:
+        return self._arguments
+
+
+class _Actions:
+    """Action sub-parsers and dispatch shared by the action commands."""
+
+    ACTIONS: ClassVar[tuple[Action, ...]]
+    # Run without an action; None makes the action required.
+    DEFAULT_ACTION: ClassVar[str | None] = None
+
+    def add_actions(self, parser: argparse.ArgumentParser) -> None:
+        actions = parser.add_subparsers(
+            dest='action', metavar='action',
+            required=self.DEFAULT_ACTION is None)
+        for action in self.ACTIONS:
+            sub = actions.add_parser(action.name, help=action.help)
+            if action.arguments is not None:
+                action.arguments(sub)
+
+    def action_of(self, args: argparse.Namespace) -> str:
+        """The action given, else the default one."""
+
+        action = args.action or self.DEFAULT_ACTION
+        assert action is not None
+        return action
+
+    def handler(self, args: argparse.Namespace
+                ) -> Callable[..., Awaitable[int]]:
+        handler: Callable[..., Awaitable[int]] = getattr(
+            self, 'run_' + self.action_of(args).replace('-', '_'))
+        return handler
+
+
+class ActionCommand(_Actions, Command):
+    """A command made of actions, each run as ``run_<action>(context, args)``."""
+
+    async def run(self, context: CliContext,
+                  args: argparse.Namespace) -> int:
+        return await self.handler(args)(context, args)
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        self.add_actions(parser)
+
+
+class ChargerActionCommand(_Actions, ChargerCommand):
+    """A charger command made of actions.
+
+    Each runs as ``run_<action>(context, charger, args)``; the charger
+    selection options come before the action.
+    """
+
+    async def run_charger(self, context: CliContext, charger: Charger,
+                          args: argparse.Namespace) -> int:
+        return await self.handler(args)(context, charger, args)
+
+    def add_charger_arguments(self, parser: argparse.ArgumentParser) -> None:
+        self.add_actions(parser)
 
 
 def select_device(devices: list[BoundDevice],
