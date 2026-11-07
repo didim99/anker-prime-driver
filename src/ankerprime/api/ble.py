@@ -7,13 +7,17 @@ from ankerprime.interfaces.channel import Channel
 from ankerprime.interfaces.charger import Charger
 from ankerprime.interfaces.storage import DocumentStore
 from ankerprime.model.state import DeviceInfo
+from ankerprime.protocol.a2687.handshake import new_client_id
 from ankerprime.session.a2687 import A2687Session
 from ankerprime.transport.ble import (
-    BleTransport, DiscoveredCharger, discover_chargers)
+    BleTransport, DeviceCallback, DiscoveredCharger,
+    advertisement_match, discover_chargers)
 from ankerprime.utils import Clock
 
 
-__all__ = ['DiscoveredCharger', 'ble_charger', 'discover_chargers']
+__all__ = ['A2687Timings', 'DeviceCallback', 'DiscoveredCharger',
+           'advertisement_match', 'ble_charger', 'discover_chargers',
+           'new_client_id']
 
 
 def ble_charger(device: BLEDevice | str, *, owner_id: str | None = None,
@@ -24,6 +28,7 @@ def ble_charger(device: BLEDevice | str, *, owner_id: str | None = None,
                 energy_store: DocumentStore | None = None,
                 timings: A2687Timings | None = None,
                 clock: Clock | None = None,
+                ble_device_callback: DeviceCallback | None = None,
                 transport: Channel | None = None) -> Charger:
     """Return a charger reached over Bluetooth LE.
 
@@ -33,10 +38,14 @@ def ble_charger(device: BLEDevice | str, *, owner_id: str | None = None,
     when omitted; keep it stable across runs). ``country`` is the account's
     two-letter country code. ``info`` gives the known identity. Energy
     counters are kept in ``energy_store`` under the charger's serial.
+    ``ble_device_callback`` returns the newest ``BLEDevice`` before each
+    connection attempt (Home Assistant:
+    ``bluetooth.async_ble_device_from_address``), falling back to ``device``.
     ``transport`` replaces the Bluetooth link (tests, custom links).
     """
 
-    link = transport if transport is not None else BleTransport(device)
+    link = transport if transport is not None else BleTransport(
+        device, device_callback=ble_device_callback)
     session = A2687Session(link, client_id=client_id, owner_id=owner_id,
                            clock=clock)
     return A2687Device(session, info, keep_connection=keep_connection,

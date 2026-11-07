@@ -99,7 +99,9 @@ asyncio.run(main())
 ```
 
 `device` may also be an address string, which is then scanned for; Home
-Assistant passes its own `BLEDevice` (which may route through a proxy).
+Assistant passes its own `BLEDevice` (which may route through a proxy) and
+`ble_device_callback`, which supplies the newest one before each connection
+attempt. `new_client_id()` makes a fallback identity to store once.
 
 ## Layers
 
@@ -131,18 +133,18 @@ Dependencies point downwards. Layers meet at the abstract interfaces in
 
 ## The Charger interface
 
-| Member                     | Meaning                                                                         |
+| Member | Meaning |
 |----------------------------|---------------------------------------------------------------------------------|
-| `product`                  | model definition: ports, outputs, capabilities, value ranges                    |
-| `state`                    | latest `ChargerState`, available before the first connection                    |
-| `subscribe(listener)`      | call `listener(state)` with every new state; returns an unsubscribe function    |
-| `connect()`                | connect; raises when the first attempt fails, then reconnects in the background |
-| `disconnect()`             | stop and save energy counters                                                   |
-| `refresh()`                | read the full state again                                                       |
-| `last_error`               | the error that stopped reconnecting (None while trying)                         |
-| `supports(capability)`     | the unit has the capability and it is implemented                               |
-| `reset_energy(ports=None)` | zero energy counters, also while disconnected                                   |
-| one method per capability  | `set_output`, `start_countdown`, `set_charging_mode`, `set_brightness`, …       |
+| `product` | model definition: ports, outputs, capabilities, value ranges |
+| `state` | latest `ChargerState`, available before the first connection |
+| `subscribe(listener)` | call `listener(state)` with every new state; returns an unsubscribe function |
+| `connect()` | connect; raises when the first attempt fails, then reconnects in the background |
+| `disconnect()` | stop and save energy counters |
+| `refresh()` | read the full state again |
+| `last_error` | the error that stopped reconnecting (None while trying) |
+| `supports(capability)` | the unit has the capability and it is implemented |
+| `reset_energy(ports=None)` | zero energy counters, also while disconnected |
+| one method per capability | `set_output`, `start_countdown`, `set_charging_mode`, `set_brightness`, … |
 
 Listeners run on the event loop and must not block; an exception in one is
 logged and does not affect others. States are immutable and published only
@@ -254,17 +256,17 @@ own `Store`. Documents: `Authentication` and `AccountCredentials`
 
 All library errors derive from `AnkerPrimeError` (`ankerprime.model`):
 
-| Error                        | Meaning                                                         |
+| Error | Meaning |
 |------------------------------|-----------------------------------------------------------------|
-| `AuthenticationError`        | credentials or token rejected; user action needed               |
-| `AccountRefusedError`        | (subclass) a 160W refused the user identity; set the owner ID   |
-| `ChargerConnectionError`     | charger or cloud unreachable, link lost                         |
-| `ChargerTimeoutError`        | no answer in time (also a `TimeoutError`)                       |
-| `ProtocolError`              | unexpected data from the charger or the cloud                   |
-| `InvalidParameterError`      | argument outside what the charger accepts (also a `ValueError`) |
-| `UnsupportedCapabilityError` | the charger or this library lacks the feature                   |
-| `WriteRejectedError`         | the charger refused a write (`status`)                          |
-| `UnknownProductError`        | not a supported model                                           |
+| `AuthenticationError` | credentials or token rejected; user action needed |
+| `AccountRefusedError` | (subclass) a 160W refused the user identity; set the owner ID |
+| `ChargerConnectionError` | charger or cloud unreachable, link lost |
+| `ChargerTimeoutError` | no answer in time (also a `TimeoutError`) |
+| `ProtocolError` | unexpected data from the charger or the cloud |
+| `InvalidParameterError` | argument outside what the charger accepts (also a `ValueError`) |
+| `UnsupportedCapabilityError` | the charger or this library lacks the feature |
+| `WriteRejectedError` | the charger refused a write (`status`) |
+| `UnknownProductError` | not a supported model |
 
 ## Logging
 

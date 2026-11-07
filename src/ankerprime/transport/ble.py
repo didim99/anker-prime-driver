@@ -2,14 +2,16 @@
 
 Needs the ``ble`` extra. The charger is given as a ``BLEDevice`` (from Home
 Assistant's Bluetooth stack, which may route through a proxy) or as an
-address that is looked up by scanning. Notifications are passed on as they
-arrive; frames spanning several notifications are joined by the session.
+address that is looked up by scanning; an optional callback supplies a newer
+``BLEDevice`` before each connection attempt (a proxy may have taken over).
+Notifications are passed on as they arrive; frames spanning several
+notifications are joined by the session.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from bleak import BleakScanner
@@ -36,11 +38,16 @@ DEFAULT_CONNECT_ATTEMPTS = 3
 PRODUCT_TYPE = bytes((0xB4, 0x05))
 SERVICES = (ADVERTISED_SERVICE, PRIMARY_SERVICE)
 
+# Supplies the newest BLEDevice, e.g. Home Assistant's
+# ``bluetooth.async_ble_device_from_address``; None when not seen.
+DeviceCallback = Callable[[], BLEDevice | None]
+
 
 class BleTransport(Channel):
     """GATT link to one charger: writes frames, forwards notifications."""
 
     _device: BLEDevice | str
+    _device_callback: DeviceCallback | None
     _scan_timeout: float
     _connect_attempts: int
 
@@ -49,9 +56,11 @@ class BleTransport(Channel):
     _write_response: bool
 
     def __init__(self, device: BLEDevice | str, *,
+                 device_callback: DeviceCallback | None = None,
                  scan_timeout: float = DEFAULT_SCAN_TIMEOUT,
                  connect_attempts: int = DEFAULT_CONNECT_ATTEMPTS):
         self._device = device
+        self._device_callback = device_callback
         self._scan_timeout = scan_timeout
         self._connect_attempts = connect_attempts
         self._listener = None
@@ -84,7 +93,8 @@ class BleTransport(Channel):
             client = await establish_connection(
                 BleakClientWithServiceCache, device, device.name or NAME_PREFIX,
                 disconnected_callback=self._on_disconnected,
-                max_attempts=self._connect_attempts)
+                max_attempts=self._connect_attempts,
+                ble_device_callback=lambda: self._latest(device))
         except (BleakError, BleakNotFoundError, TimeoutError) as error:
             raise ChargerConnectionError(
                 f'cannot connect to {redact(device.address)}: {error}'
@@ -123,7 +133,20 @@ class BleTransport(Channel):
         except (BleakError, TimeoutError) as error:
             raise ChargerConnectionError(f'write failed: {error}') from error
 
+    def _latest(self, fallback: BLEDevice) -> BLEDevice:
+        """The newest ``BLEDevice`` the embedder knows, for retries."""
+
+        if self._device_callback is not None:
+            device = self._device_callback()
+            if device is not None:
+                return device
+        return fallback
+
     async def _resolve(self) -> BLEDevice:
+        if self._device_callback is not None:
+            device = self._device_callback()
+            if device is not None:
+                return device
         if not isinstance(self._device, str):
             return self._device
         try:

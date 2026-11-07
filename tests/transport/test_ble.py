@@ -83,6 +83,7 @@ class Bluetooth:
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch):
         self.clients: list[FakeClient] = []
+        self.devices: list[BLEDevice] = []
         self.connect_error: Exception | None = None
         self.write = FakeCharacteristic(['write-without-response', 'write'])
         self.found: BLEDevice | None = DEVICE
@@ -95,9 +96,12 @@ class Bluetooth:
 
     async def connect(self, client_class: type, device: BLEDevice, name: str,
                       disconnected_callback: Callable[[FakeClient], None],
-                      max_attempts: int) -> FakeClient:
+                      max_attempts: int,
+                      ble_device_callback: Callable[[], BLEDevice]
+                      ) -> FakeClient:
         if self.connect_error is not None:
             raise self.connect_error
+        self.devices.append(ble_device_callback())
         client = FakeClient(disconnected_callback, self.write)
         self.clients.append(client)
         return client
@@ -194,6 +198,20 @@ async def test_address_is_looked_up(bluetooth: Bluetooth) -> None:
     missing.set_device(newer)
     await missing.open()
     assert missing.is_open
+
+
+async def test_device_callback_supplies_the_newest_device(
+        bluetooth: Bluetooth) -> None:
+    newer = BLEDevice(ADDRESS, 'via proxy', None)
+    current: list[BLEDevice | None] = [None]
+    transport = BleTransport(ADDRESS, device_callback=lambda: current[0])
+    await transport.open()
+    assert bluetooth.devices == [DEVICE]
+    await transport.close()
+    current[0] = newer
+    bluetooth.found = None
+    await transport.open()
+    assert bluetooth.devices[-1] is newer
 
 
 def test_advertisement_match() -> None:
