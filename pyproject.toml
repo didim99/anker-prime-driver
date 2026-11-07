@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anker-prime-driver"
-version = "0.1.0.dev1"
+version = "0.7.2"
 description = "Monitoring and control library for Anker Prime chargers"
 readme = "readme.md"
 license = "MIT"
