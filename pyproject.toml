@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 authors = [{ name = "didim99" }]
 keywords = ["anker", "anker-prime", "charger", "home-assistant", "mqtt", "ble"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",

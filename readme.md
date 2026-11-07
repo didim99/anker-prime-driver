@@ -4,11 +4,15 @@ Python library and command-line tool to monitor and control Anker Prime
 chargers: per-port voltage, current and power, port switches, countdowns and
 schedules, charging modes, display settings and energy counters.
 
-> **Status: pre-alpha, under development.** The 250W cloud connection, energy
-> counters and the command-line tool work. 160W (Bluetooth) support is
-> implemented but untested on a real charger.
+> [!NOTE]
+> **Status: alpha.** The 250W cloud connection, energy counters and the
+> command-line tool are tested on real hardware and used daily in Home
+> Assistant. 160W (Bluetooth) support is implemented but untested on a real
+> charger. The API may still change before 1.0.
 
-This is an unofficial project, not affiliated with or endorsed by Anker.
+This is an unofficial project, not affiliated with or endorsed by Anker. For
+Home Assistant, see [ha-anker-prime](https://github.com/didim99/ha-anker-prime),
+which is built on this library.
 
 ## Supported chargers
 
@@ -17,18 +21,18 @@ This is an unofficial project, not affiliated with or endorsed by Anker.
 | A2345 | Anker Prime Charger 250W | Anker cloud (account + MQTT over Wi-Fi) | everything except the UFCS switch |
 | A2687 | Anker Prime 160W         | Bluetooth LE (local)                    | display settings (by Charker)     |
 
-The 250W must be bound to an Anker account in the Anker app. Unverified
-features are marked experimental: they follow the known protocol but are not
-yet confirmed on that model. A local connection for the 250W may follow later
-without changes for library users.
+The 250W must be bound to an Anker account in the Anker app; accounts of
+mainland China (SMS login) are not supported. The 160W accepts one Bluetooth
+connection at a time, so the Anker app cannot reach it while the library is
+connected. Unverified features are marked experimental: they follow the known
+protocol but are not yet confirmed on that model. A local connection for the
+250W may follow later without changes for library users.
 
 ## Installation
 
-Not published yet. Once released:
-
 ```bash
-pip install anker-prime-driver          # cloud (250W) support
-pip install anker-prime-driver[ble]     # plus Bluetooth (160W) support
+pip install anker-prime-driver            # cloud (250W) support
+pip install "anker-prime-driver[ble]"     # plus Bluetooth (160W) support
 ```
 
 Requires Python 3.11 or later.
@@ -37,8 +41,8 @@ Requires Python 3.11 or later.
 
 ```bash
 ankerprime login you@example.com DE     # asks for the password
-ankerprime devices
-ankerprime charger add desk --serial A2345XXXXXXXXXX --default
+ankerprime devices                      # chargers of the account
+ankerprime charger add desk --serial <serial> --default
 ankerprime monitor                      # live readings until Ctrl+C
 ankerprime output c1 off
 ```
@@ -48,14 +52,14 @@ ankerprime output c1 off
 - [Command-line tool](docs/cli.md): every command and option, the
   configuration folder, charger selection, exit codes.
 - [Library overview](docs/library.md): usage examples, layers, the `Charger`
-  interface, state model, connection behaviour, energy counters, errors.
+  interface, state model, connection behavior, energy counters, errors.
 
 ## Development
 
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-pip install -e .[ble] -r requirements-dev.txt
+pip install -e ".[ble]" -r requirements-dev.txt
 
 ruff check
 mypy
