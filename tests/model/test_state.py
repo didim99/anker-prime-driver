@@ -80,7 +80,7 @@ def test_capabilities_narrowed_by_firmware() -> None:
     state = ChargerState(A2345, capabilities=narrowed)
     assert not state.supports(Capability.UFCS)
     assert state.supports(Capability.OUTPUT_SWITCH)
-    assert not state.supports(Capability.CUSTOM_CHARGING_MODE)
+    assert not state.supports(Capability.CLOCK_PICTURE)
     assert state.capabilities[Capability.OUTPUT_SWITCH] == Verification.VERIFIED
 
 

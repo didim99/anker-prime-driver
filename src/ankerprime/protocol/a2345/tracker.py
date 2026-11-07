@@ -1,9 +1,10 @@
 """Tracks what an A2345 reported and maps it to the shared charger model."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Iterable, Mapping
 from datetime import datetime
 
 from ankerprime.model.capabilities import Capability, Verification
+from ankerprime.model.custom import AccountSettings, ChargingProfile
 from ankerprime.model.enums import OutputId, PortId, Weekday
 from ankerprime.model.errors import InvalidParameterError
 from ankerprime.model.product import A2345, Product
@@ -28,6 +29,7 @@ from ankerprime.protocol.codes import decode_value, lookup
 GATED_CAPABILITIES = {
     Capability.CLOCK_SCHEDULE: Capabilities.CLOCK_SCHEDULE,
     Capability.CUSTOM_CHARGING_MODE: Capabilities.CUSTOM_CHARGING_MODE,
+    Capability.CUSTOM_PROFILES: Capabilities.CUSTOM_CHARGING_MODE,
     Capability.DEVICE_IDENTIFICATION: Capabilities.DEVICE_IDENTIFICATION,
     Capability.MAX_COMPATIBILITY: Capabilities.MAX_COMPATIBILITY,
     Capability.UFCS: Capabilities.UFCS_SWITCH,
@@ -87,8 +89,15 @@ class StateTracker:
         return True
 
     def build(self, *, info: DeviceInfo | None = None, available: bool,
-              energy: Mapping[PortId, float] | None = None) -> ChargerState:
-        """Build the model state; ``info`` provides identity the charger lacks."""
+              energy: Mapping[PortId, float] | None = None,
+              account: AccountSettings | None = None,
+              profiles: Iterable[ChargingProfile] | None = None,
+              unavailable: Collection[Capability] = ()) -> ChargerState:
+        """Build the model state; ``info`` provides identity the charger lacks.
+
+        ``account`` and ``profiles`` come from the user's account;
+        ``unavailable`` removes capabilities the connection cannot offer.
+        """
 
         settings = self._settings
         ports = {port: self._port_reading(port, raw)
@@ -104,9 +113,10 @@ class StateTracker:
             error_code = settings.error_code
         return ChargerState(self._product, info=self._device_info(info),
                             available=available,
-                            capabilities=self._capabilities(),
+                            capabilities=self._capabilities(unavailable),
                             ports=ports, outputs=outputs,
-                            settings=self._charger_settings(),
+                            settings=self._charger_settings(account,
+                                                            profiles),
                             over_temperature=over_temperature,
                             error_code=error_code, energy=energy,
                             updated_at=self._updated_at)
@@ -134,8 +144,11 @@ class StateTracker:
                           firmware_version=firmware, hardware_version=hardware,
                           mac_address=base.mac_address)
 
-    def _capabilities(self) -> Mapping[Capability, Verification]:
-        capabilities = dict(self._product.capabilities)
+    def _capabilities(self, unavailable: Collection[Capability]
+                      ) -> Mapping[Capability, Verification]:
+        capabilities = {capability: verification for capability, verification
+                        in self._product.capabilities.items()
+                        if capability not in unavailable}
         if self._settings is None or self._settings.capabilities is None:
             return capabilities
         for capability, bit in GATED_CAPABILITIES.items():
@@ -175,10 +188,14 @@ class StateTracker:
                            preferred=preferred,
                            fault=settings.output_fault(output))
 
-    def _charger_settings(self) -> ChargerSettings:
+    def _charger_settings(self, account: AccountSettings | None,
+                          profiles: Iterable[ChargingProfile] | None
+                          ) -> ChargerSettings:
+        enabled = account.custom_mode_enabled if account is not None else None
         settings = self._settings
         if settings is None:
-            return ChargerSettings()
+            return ChargerSettings(custom_mode_enabled=enabled,
+                                   custom_profiles=profiles)
         timeout = decode_value(SCREEN_TIMEOUT_CODES, settings.screen_timeout)
         knob = decode_value(KNOB_DIRECTION_CODES, settings.knob_direction)
         hours = decode_value(HOUR_FORMAT_CODES, settings.hour_format)
@@ -190,13 +207,19 @@ class StateTracker:
             clock = _clock_settings(settings.clock, settings.clock_schedule)
         mode = decode_value(CHARGING_MODE_CODES, settings.charging_mode)
         identification = settings.device_identification
+        active = None
+        if settings.custom_charging_mode and settings.custom_profile:
+            active = settings.custom_profile.number
         return ChargerSettings(charging_mode=mode,
                                charging_mode_code=settings.charging_mode,
                                max_compatibility=settings.max_compatibility,
                                device_identification=identification,
                                ufcs=settings.ufcs,
                                updating_firmware=settings.updating_firmware,
-                               display=display, clock=clock)
+                               display=display, clock=clock,
+                               custom_mode_enabled=enabled,
+                               active_profile=active,
+                               custom_profiles=profiles)
 
 
 def _schedule(slot: PortSchedule) -> Schedule | None:

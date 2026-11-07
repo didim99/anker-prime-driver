@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import ClassVar
 
+from ankerprime.model.custom import ChargingProfile, CustomProtocol
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, HourFormat, KnobDirection,
     OutputId, ScheduleSlot, ScreenTimeout)
@@ -17,7 +18,7 @@ from ankerprime.model.state import ClockSchedule, Schedule
 from ankerprime.protocol.a2345.codes import (
     CHARGING_MODE_CODES, CLOCK_THEME_CODES, HOUR_FORMAT_CODES,
     KNOB_DIRECTION_CODES, SCHEDULE_SLOT_CODES,
-    SCREEN_TIMEOUT_CODES, USB_C_GROUPS, group_code)
+    GROUPS, SCREEN_TIMEOUT_CODES, USB_C_GROUPS, group_code)
 from ankerprime.protocol.a2345.frame import CLOUD_SESSION, encode_request
 from ankerprime.protocol.a2345.settings import (
     ACK_PREFIX, CUSTOM_CHARGING_MODE_CODE,
@@ -208,6 +209,45 @@ def set_custom_charging_mode(profile: CustomProfile,
         fields[0xA4] = b''.join(bytes((flags & 0x7F, 0, 0))
                                 for flags in protocols)
     return Command(MSG_CHARGING_MODE, fields)
+
+
+def apply_custom_profile(profile: ChargingProfile, *, mainland: bool,
+                         with_protocols: bool) -> Command:
+    """Activate a model profile; protocols only when ``with_protocols``.
+
+    Mainland firmware reads the SCP bit as Huawei and adds Xiaomi.
+    """
+
+    watts = [profile.watts(output) for output in GROUPS]
+    custom = CustomProfile(profile.number, profile.auto_exit, watts)
+    protocols = None
+    if with_protocols:
+        protocols = [port_protocols(profile, output, mainland)
+                     for output in USB_C_GROUPS]
+    return set_custom_charging_mode(custom, protocols)
+
+
+def port_protocols(profile: ChargingProfile, output: OutputId,
+                   mainland: bool) -> PortProtocol:
+    """Protocol bits of one C port as the charger expects them."""
+
+    limit = profile.port(output)
+    flags = PortProtocol(0)
+    if limit is None:
+        return flags
+    scp = CustomProtocol.HUAWEI if mainland else CustomProtocol.SCP
+    bits = {scp: PortProtocol.SCP,
+            CustomProtocol.UFCS: PortProtocol.UFCS,
+            CustomProtocol.PD_12V: PortProtocol.PD_12V,
+            CustomProtocol.PPS_11V: PortProtocol.PPS_11V,
+            CustomProtocol.PPS_16V: PortProtocol.PPS_16V,
+            CustomProtocol.PPS_21V: PortProtocol.PPS_21V}
+    if mainland:
+        bits[CustomProtocol.XIAOMI] = PortProtocol.XIAOMI
+    for protocol, bit in bits.items():
+        if limit.allows(protocol):
+            flags |= bit
+    return flags
 
 
 def exit_custom_charging_mode() -> Command:

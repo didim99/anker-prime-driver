@@ -13,7 +13,7 @@ from ankerprime.cloud.client import BoundDevice
 from ankerprime.cloud.regions import EU_SERVER
 from ankerprime.device.a2345 import A2345Timings
 from ankerprime.model import (
-    AuthenticationError, OutputId, ProductCode, UnknownProductError)
+    AuthenticationError, Capability, OutputId, ProductCode, UnknownProductError)
 from tests.cloud.fakes import FakeAnkerCloud, FakeHttpClient
 from tests.protocol.a2345.fixtures import STATUS_SNAPSHOT
 from tests.transport.fakes import FakeMqttConnector
@@ -116,3 +116,26 @@ async def test_charger_end_to_end_over_fake_mqtt() -> None:
         await account.close()
     assert not charger.state.available
     assert connector.last.closed
+
+
+async def test_charger_reads_account_settings_with_relogin() -> None:
+    server = FakeAnkerCloud()
+    connector = FakeMqttConnector()
+    account = await make_account(server, connector)
+    charger = (await account.chargers())[0]
+    server.mini_power.settings('SERIAL123')['charging_mode_status'] = 1
+    server.revoke('token-1')
+    try:
+        await charger.connect()
+        connector.last.deliver('dt/anker_power/A2345/SERIAL123/res',
+                               STATUS_SNAPSHOT)
+        await wait_until(lambda: charger.state.settings.custom_profiles
+                         is not None)
+        assert charger.supports(Capability.CUSTOM_PROFILES)
+        assert charger.state.settings.custom_mode_enabled is True
+        assert account.authentication.auth_token == 'token-2'
+        names = [name for name, _ in server.mini_power.calls]
+        assert names[-2:] == ['get_charging_device_identity_status_default_true',
+                              'get_charging_mode_list']
+    finally:
+        await account.close()

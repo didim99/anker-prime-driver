@@ -9,6 +9,7 @@ from collections.abc import Collection
 
 from ankerprime.interfaces.charger import Charger, ChargerListener, Unsubscribe
 from ankerprime.model.capabilities import Capability
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, DisplayLanguage, FixedAllocation, HourFormat,
     KnobDirection, OutputId, ScheduleSlot, ScreenOrientation, ScreenTimeout)
@@ -144,6 +145,30 @@ class BaseCharger(Charger):
         self._require(Capability.UFCS)
         await self._set_ufcs(enabled)
 
+    async def apply_custom_profile(self, profile: ChargingProfile) -> None:
+        self._require(Capability.CUSTOM_CHARGING_MODE)
+        await self._apply_custom_profile(profile)
+
+    async def exit_custom_mode(self) -> None:
+        self._require(Capability.CUSTOM_CHARGING_MODE)
+        await self._exit_custom_mode()
+
+    async def set_custom_mode_enabled(self, enabled: bool) -> None:
+        self._require(Capability.CUSTOM_PROFILES)
+        await self._set_custom_mode_enabled(enabled)
+
+    async def save_custom_profile(self, profile: ChargingProfile) -> None:
+        self._require(Capability.CUSTOM_PROFILES)
+        await self._save_custom_profile(profile)
+
+    async def delete_custom_profile(self, number: int) -> None:
+        self._require(Capability.CUSTOM_PROFILES)
+        await self._delete_custom_profile(number)
+
+    async def reload_custom_profiles(self) -> None:
+        self._require(Capability.CUSTOM_PROFILES)
+        await self._reload_custom_profiles()
+
     def _require(self, capability: Capability) -> None:
         if not self.supports(capability):
             raise UnsupportedCapabilityError(capability)
@@ -224,3 +249,21 @@ class BaseCharger(Charger):
 
     async def _set_ufcs(self, enabled: bool) -> None:
         raise UnsupportedCapabilityError(Capability.UFCS)
+
+    async def _apply_custom_profile(self, profile: ChargingProfile) -> None:
+        raise UnsupportedCapabilityError(Capability.CUSTOM_CHARGING_MODE)
+
+    async def _exit_custom_mode(self) -> None:
+        raise UnsupportedCapabilityError(Capability.CUSTOM_CHARGING_MODE)
+
+    async def _set_custom_mode_enabled(self, enabled: bool) -> None:
+        raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)
+
+    async def _save_custom_profile(self, profile: ChargingProfile) -> None:
+        raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)
+
+    async def _delete_custom_profile(self, number: int) -> None:
+        raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)
+
+    async def _reload_custom_profiles(self) -> None:
+        raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)

@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.state import (
     ChargerSettings, ChargerState, ClockSchedule,
     Countdown, OutputState, PortReading, Schedule)
@@ -79,7 +80,28 @@ def _settings(settings: ChargerSettings) -> dict[str, Any]:
                     'knob_direction': enum_value(display.knob_direction),
                     'hour_format': enum_value(display.hour_format)},
         'clock': clock_data,
+        'custom_mode_enabled': settings.custom_mode_enabled,
+        'active_profile': settings.active_profile,
+        'custom_profiles': (
+            None if settings.custom_profiles is None
+            else [profile_to_dict(profile)
+                  for profile in settings.custom_profiles]),
     }
+
+
+def profile_to_dict(profile: ChargingProfile) -> dict[str, Any]:
+    """A custom profile with its per-port limits and protocols."""
+
+    return {'number': profile.number, 'name': profile.name,
+            'profile_id': profile.profile_id,
+            'auto_exit': profile.auto_exit,
+            'protocols_enabled': profile.protocols_enabled,
+            'total_watts': profile.total_watts,
+            'ports': {port.output.value: {
+                'watts': port.watts,
+                'protocols': sorted(protocol.value
+                                    for protocol in port.protocols)}
+                for port in profile.ports}}
 
 
 def _countdown(countdown: Countdown | None) -> dict[str, Any] | None:

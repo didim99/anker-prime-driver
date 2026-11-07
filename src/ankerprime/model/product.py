@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from ankerprime.model.capabilities import Capability, Verification
+from ankerprime.model.custom import CustomModeRules, CustomPortRule
 from ankerprime.model.enums import (
     ChargingMode, ConnectorType, DisplayLanguage,
     OutputId, PortId, ProductCode, ScreenTimeout)
@@ -118,6 +119,7 @@ class Product:
     _countdown: ValueRange | None
     _priority_outputs: tuple[OutputId, ...]
     _max_preferred_outputs: int
+    _custom_mode: CustomModeRules | None
 
     def __init__(self, *, code: ProductCode, name: str, rated_power: float,
                  ports: Iterable[PortSpec], outputs: Iterable[OutputSpec],
@@ -128,7 +130,8 @@ class Product:
                  brightness: ValueRange | None = None,
                  countdown: ValueRange | None = None,
                  priority_outputs: Iterable[OutputId] = (),
-                 max_preferred_outputs: int = 0):
+                 max_preferred_outputs: int = 0,
+                 custom_mode: CustomModeRules | None = None):
         self._code = code
         self._name = name
         self._rated_power = rated_power
@@ -143,6 +146,7 @@ class Product:
         self._countdown = countdown
         self._priority_outputs = tuple(priority_outputs)
         self._max_preferred_outputs = max_preferred_outputs
+        self._custom_mode = custom_mode
 
     @property
     def code(self) -> ProductCode:
@@ -206,6 +210,12 @@ class Product:
     def max_preferred_outputs(self) -> int:
         return self._max_preferred_outputs
 
+    @property
+    def custom_mode(self) -> CustomModeRules | None:
+        """Limits of the custom charging mode capability."""
+
+        return self._custom_mode
+
     def verification(self, capability: Capability) -> Verification | None:
         """Return the trust level of a capability, or None if absent."""
 
@@ -263,7 +273,8 @@ A2345 = Product(
         Capability.OUTPUT_SCHEDULE: Verification.VERIFIED,
         Capability.CHARGING_MODE: Verification.VERIFIED,
         Capability.PORT_PRIORITY: Verification.VERIFIED,
-        Capability.CUSTOM_CHARGING_MODE: Verification.PLANNED,
+        Capability.CUSTOM_CHARGING_MODE: Verification.EXPERIMENTAL,
+        Capability.CUSTOM_PROFILES: Verification.EXPERIMENTAL,
         Capability.SCREEN_BRIGHTNESS: Verification.VERIFIED,
         Capability.SCREEN_TIMEOUT: Verification.VERIFIED,
         Capability.KNOB_DIRECTION: Verification.VERIFIED,
@@ -293,6 +304,20 @@ A2345 = Product(
     countdown=ValueRange(1, 86_400),
     priority_outputs=(OutputId.C1, OutputId.C2, OutputId.C3, OutputId.C4),
     max_preferred_outputs=2,
+    custom_mode=CustomModeRules(
+        numbers=range(1, 5),
+        total_limit=250,
+        ports=(
+            CustomPortRule(OutputId.C1, 140),
+            CustomPortRule(OutputId.C2, 100, mainland_maximum=120),
+            CustomPortRule(OutputId.C3, 100, mainland_maximum=120),
+            CustomPortRule(OutputId.C4, 100, mainland_maximum=120),
+            CustomPortRule(OutputId.USB_A, 24, choices=(0, 15, 24)),
+        ),
+        default_watts={OutputId.C1: 100, OutputId.C2: 65, OutputId.C3: 45,
+                       OutputId.C4: 25, OutputId.USB_A: 15},
+        has_protocols=True,
+    ),
 )
 
 A2687 = Product(

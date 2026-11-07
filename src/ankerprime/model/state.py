@@ -4,13 +4,14 @@ Optional values are None when the charger has not reported them (yet) or the
 product does not have the feature.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import ClassVar
 
 from ankerprime.model.capabilities import Capability, Verification
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import (
     CableRating, ChargingMode, ChargingProtocol, ClockTheme, DeviceBrand,
     DisplayLanguage, FixedAllocation, HourFormat, KnobDirection,
@@ -399,6 +400,9 @@ class ChargerSettings:
     _updating_firmware: bool | None
     _display: DisplaySettings
     _clock: ClockSettings | None
+    _custom_mode_enabled: bool | None
+    _active_profile: int | None
+    _custom_profiles: tuple[ChargingProfile, ...] | None
 
     def __init__(self, *, charging_mode: ChargingMode | None = None,
                  charging_mode_code: int | None = None,
@@ -408,7 +412,10 @@ class ChargerSettings:
                  ufcs: bool | None = None,
                  updating_firmware: bool | None = None,
                  display: DisplaySettings | None = None,
-                 clock: ClockSettings | None = None):
+                 clock: ClockSettings | None = None,
+                 custom_mode_enabled: bool | None = None,
+                 active_profile: int | None = None,
+                 custom_profiles: Iterable[ChargingProfile] | None = None):
         self._charging_mode = charging_mode
         self._charging_mode_code = charging_mode_code
         self._fixed_allocation = fixed_allocation
@@ -418,6 +425,11 @@ class ChargerSettings:
         self._updating_firmware = updating_firmware
         self._display = display if display is not None else DisplaySettings()
         self._clock = clock
+        self._custom_mode_enabled = custom_mode_enabled
+        self._active_profile = active_profile
+        self._custom_profiles = None
+        if custom_profiles is not None:
+            self._custom_profiles = tuple(custom_profiles)
 
     @property
     def charging_mode(self) -> ChargingMode | None:
@@ -458,6 +470,30 @@ class ChargerSettings:
     @property
     def clock(self) -> ClockSettings | None:
         return self._clock
+
+    @property
+    def custom_mode_enabled(self) -> bool | None:
+        """The account's switch that makes custom mode available."""
+
+        return self._custom_mode_enabled
+
+    @property
+    def active_profile(self) -> int | None:
+        """Number of the custom profile in use; None outside custom mode."""
+
+        return self._active_profile
+
+    @property
+    def custom_profiles(self) -> tuple[ChargingProfile, ...] | None:
+        """Profiles stored in the account, by number; None until read."""
+
+        return self._custom_profiles
+
+    def custom_profile(self, number: int) -> ChargingProfile | None:
+        for profile in self._custom_profiles or ():
+            if profile.number == number:
+                return profile
+        return None
 
 
 @dataclass(init=False)

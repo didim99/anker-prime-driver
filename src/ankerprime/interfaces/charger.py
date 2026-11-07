@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection
 
 from ankerprime.model.capabilities import Capability
+from ankerprime.model.custom import ChargingProfile
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, DisplayLanguage,
     FixedAllocation, HourFormat, KnobDirection, OutputId,
@@ -181,4 +182,53 @@ class Charger(ABC):
 
     @abstractmethod
     async def set_ufcs(self, enabled: bool) -> None:
+        pass
+
+    @abstractmethod
+    async def apply_custom_profile(self, profile: ChargingProfile) -> None:
+        """Switch to custom mode with the profile's limits.
+
+        The profile must satisfy ``product.custom_mode``; it need not be
+        stored. Every port drops out for a few seconds while the charger
+        renegotiates.
+        """
+
+        pass
+
+    @abstractmethod
+    async def exit_custom_mode(self) -> None:
+        """Leave custom mode; the charger returns to its previous mode."""
+
+        pass
+
+    @abstractmethod
+    async def set_custom_mode_enabled(self, enabled: bool) -> None:
+        """Switch the account's Labs setting that offers custom mode.
+
+        Switching it off also leaves custom mode, as the official app does.
+        """
+
+        pass
+
+    @abstractmethod
+    async def save_custom_profile(self, profile: ChargingProfile) -> None:
+        """Store a profile in the account under its number.
+
+        Replaces a stored profile with the same number; when that profile is
+        in use, the charger gets the new limits too. The name is trimmed and,
+        outside mainland China, SCP is dropped on ports capped at 15–20 W.
+        """
+
+        pass
+
+    @abstractmethod
+    async def delete_custom_profile(self, number: int) -> None:
+        """Remove a stored profile, leaving custom mode first if it is in use."""
+
+        pass
+
+    @abstractmethod
+    async def reload_custom_profiles(self) -> None:
+        """Read the account's settings and profiles into the state again."""
+
         pass

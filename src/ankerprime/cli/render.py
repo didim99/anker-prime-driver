@@ -218,6 +218,13 @@ def _settings(state: ChargerState, painter: Painter) -> str:
     mode_parts = [painter.strong(mode or UNKNOWN)]
     if settings.fixed_allocation is not None:
         mode_parts.append(f'allocation {settings.fixed_allocation.value}')
+    if settings.active_profile is not None:
+        profile = settings.custom_profile(settings.active_profile)
+        name = f' "{profile.name}"' if profile is not None else ''
+        mode_parts.append(f'profile {settings.active_profile}{name}')
+    if settings.custom_mode_enabled is not None:
+        mode_parts.append('custom mode setting '
+                          + _switch(painter, settings.custom_mode_enabled))
     lines.append(_line(painter, 'Mode', mode_parts))
     display_parts = [
         f'brightness {_number(display.brightness, "%")}',

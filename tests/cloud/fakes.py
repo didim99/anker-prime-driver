@@ -82,6 +82,75 @@ class FakeHttpClient(HttpClient):
         return self._handler(request)
 
 
+class FakeMiniPower:
+    """The account's charger settings and custom profiles (``mini_power``)."""
+
+    _settings: dict[str, dict[str, int]]
+    _profiles: dict[int, dict[str, Any]]
+    _next_id: int
+    _calls: list[tuple[str, dict[str, Any]]]
+
+    PREFIX = '/mini_power/v1/app/'
+
+    def __init__(self) -> None:
+        self._settings = {}
+        self._profiles = {}
+        self._next_id = 100
+        self._calls = []
+
+    @property
+    def calls(self) -> list[tuple[str, dict[str, Any]]]:
+        """Endpoint name and body of every request, in order."""
+
+        return self._calls
+
+    @property
+    def profiles(self) -> dict[int, dict[str, Any]]:
+        return self._profiles
+
+    def settings(self, serial: str) -> dict[str, int]:
+        return self._settings.setdefault(serial, {
+            'charging_mode_status': 0, 'compatibility_status': 0,
+            'charging_device_identity_status_default_true': 1})
+
+    def handles(self, request: Request) -> bool:
+        return request.path.startswith(self.PREFIX)
+
+    def __call__(self, request: Request) -> HttpResponse:
+        name = request.path.rsplit('/', 1)[1]
+        body = request.json()
+        self._calls.append((name, body))
+        data: Any = None
+        if name == 'get_device_setting':
+            values = self.settings(body['device_sn'])
+            data = {'device_setting': {
+                'charging_mode_status': values['charging_mode_status'],
+                'compatibility_status': values['compatibility_status'],
+                'charging_device_identity_status': 0}}
+        elif name == 'get_charging_device_identity_status_default_true':
+            key = 'charging_device_identity_status_default_true'
+            data = {key: self.settings(body['device_sn'])[key]}
+        elif name.startswith('set_'):
+            switches = {key: value for key, value in body.items()
+                        if key != 'device_sn'}
+            self.settings(body['device_sn']).update(switches)
+        elif name == 'get_charging_mode_list':
+            data = {'charging_mode_list': [
+                profile for profile in self._profiles.values()
+                if profile['device_sn'] == body['device_sn']]}
+        elif name == 'add_charging_mode':
+            self._next_id += 1
+            self._profiles[self._next_id] = {**body, 'id': self._next_id}
+        elif name == 'update_charging_mode':
+            stored = self._profiles[body['id']]
+            stored.update(body)
+        elif name == 'delete_charging_mode':
+            del self._profiles[body['id']]
+        else:
+            return HttpResponse(404, b'')
+        return json_response({'code': 0, 'msg': 'ok', 'data': data})
+
+
 class FakeAnkerCloud:
     """Answers the Anker API; tokens can be revoked."""
 
@@ -89,12 +158,18 @@ class FakeAnkerCloud:
     _tokens: list[str]
     _revoked: set[str]
     _login_ok: bool
+    _mini_power: FakeMiniPower
 
     def __init__(self, devices: list[dict[str, Any]] | None = None):
         self._devices = DEVICES if devices is None else devices
         self._tokens = []
         self._revoked = set()
         self._login_ok = True
+        self._mini_power = FakeMiniPower()
+
+    @property
+    def mini_power(self) -> FakeMiniPower:
+        return self._mini_power
 
     @property
     def tokens(self) -> list[str]:
@@ -115,6 +190,8 @@ class FakeAnkerCloud:
             return json_response({'code': 0, 'data': {'data': self._devices}})
         if request.path.endswith('get_user_mqtt_info'):
             return json_response({'code': 0, 'data': MQTT_INFO})
+        if self._mini_power.handles(request):
+            return self._mini_power(request)
         return HttpResponse(404, b'')
 
     def _login(self) -> HttpResponse:

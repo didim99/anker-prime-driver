@@ -111,7 +111,8 @@ device     A2345Device, A2687Device                          state, writes, time
 protocol   a2345 and a2687 codecs, shared FF09 envelope      pure, synchronous, no I/O
 session    A2687Session (ECDH + AES-GCM)                     encryption and user auth
 transport  cloud MQTT channel, BleTransport                  moves bytes only
-cloud      Anker account login, regions, bound devices, MQTT credentials
+cloud      Anker account login, regions, bound devices, MQTT credentials,
+           account-side charger settings and custom profiles
 energy     energy meter, recorder, store
 model      products, capabilities, state, enums, errors      shared by every layer
 storage    DocumentStore implementations
@@ -126,6 +127,9 @@ Dependencies point downwards. Layers meet at the abstract interfaces in
   framing. Devices reconnect by reopening their channel, so cloud and
   Bluetooth share the same device logic.
 - `Charger`: the public charger API.
+- `ChargerAccount`: charger settings kept in the user's account (the 250W's
+  custom profiles and switches); `CloudAccount` provides one per charger, so
+  the device layer does not depend on the cloud client.
 - `DocumentStore`: async key → JSON document storage.
 - `HttpClient`, `MqttConnector`: network adapters (aiohttp and aiomqtt
   implementations are included; tests and embedders can substitute their
@@ -133,18 +137,19 @@ Dependencies point downwards. Layers meet at the abstract interfaces in
 
 ## The Charger interface
 
-| Member | Meaning |
-|----------------------------|---------------------------------------------------------------------------------|
-| `product` | model definition: ports, outputs, capabilities, value ranges |
-| `state` | latest `ChargerState`, available before the first connection |
-| `subscribe(listener)` | call `listener(state)` with every new state; returns an unsubscribe function |
-| `connect()` | connect; raises when the first attempt fails, then reconnects in the background |
-| `disconnect()` | stop and save energy counters |
-| `refresh()` | read the full state again |
-| `last_error` | the error that stopped reconnecting (None while trying) |
-| `supports(capability)` | the unit has the capability and it is implemented |
-| `reset_energy(ports=None)` | zero energy counters, also while disconnected |
-| one method per capability | `set_output`, `start_countdown`, `set_charging_mode`, `set_brightness`, … |
+| Member                     | Meaning                                                                                                                                                                   |
+|----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `product`                  | model definition: ports, outputs, capabilities, value ranges                                                                                                              |
+| `state`                    | latest `ChargerState`, available before the first connection                                                                                                              |
+| `subscribe(listener)`      | call `listener(state)` with every new state; returns an unsubscribe function                                                                                              |
+| `connect()`                | connect; raises when the first attempt fails, then reconnects in the background                                                                                           |
+| `disconnect()`             | stop and save energy counters                                                                                                                                             |
+| `refresh()`                | read the full state again                                                                                                                                                 |
+| `last_error`               | the error that stopped reconnecting (None while trying)                                                                                                                   |
+| `supports(capability)`     | the unit has the capability and it is implemented                                                                                                                         |
+| `reset_energy(ports=None)` | zero energy counters, also while disconnected                                                                                                                             |
+| one method per capability  | `set_output`, `start_countdown`, `set_charging_mode`, `set_brightness`, …                                                                                                 |
+| custom mode                | `apply_custom_profile`, `exit_custom_mode`; with stored profiles also `save_custom_profile`, `delete_custom_profile`, `reload_custom_profiles`, `set_custom_mode_enabled` |
 
 Listeners run on the event loop and must not block; an exception in one is
 logged and does not affect others. States are immutable and published only
@@ -180,7 +185,8 @@ reports (for example UFCS on older 250W firmware).
   ports share one output);
 - `settings`: charging mode, fixed allocation, display (brightness, timeout,
   orientation, rotation, language, knob, hour format), clock screensaver,
-  switches;
+  switches; the custom profile in use (`active_profile`), and from the
+  account the stored `custom_profiles` and the `custom_mode_enabled` setting;
 - `over_temperature`, `error_code`;
 - `energy`, `total_energy` (Wh), `total_power` (W).
 
@@ -209,6 +215,33 @@ Behavior, following the official app:
   `ChargerTimeoutError`; a refused write raises `WriteRejectedError`.
 
 Timings are adjustable with `A2345Timings`.
+
+The account also keeps settings of each 250W: the custom mode setting
+(the app's Labs page), max compatibility, device identification and up to
+four custom profiles. They are read on every connection and with
+`refresh()` or `reload_custom_profiles()`; a failed read leaves the previous
+values. Max compatibility and device identification exclude each other and
+are written to the account first, then to the charger.
+
+### Custom charging mode
+
+A `ChargingProfile` holds a number, a name, auto-exit and one
+`CustomPortLimit` (watts and allowed `CustomProtocol`s) per output.
+`product.custom_mode` (`CustomModeRules`) has the limits, `template()` the
+Anker app's defaults, `validate()` the checks the charger and the app apply.
+
+```python
+rules = charger.product.custom_mode
+profile = rules.template(1, 'Desk').with_port(
+    CustomPortLimit(OutputId.C1, 60, {CustomProtocol.UFCS}))
+await charger.save_custom_profile(profile)     # stored in the account
+await charger.apply_custom_profile(charger.state.settings.custom_profile(1))
+await charger.exit_custom_mode()
+```
+
+Saving a profile that is in use applies it again; deleting it leaves custom
+mode first. Protocol choices are sent with the profile only to firmware that
+has per-port protocols and no separate protocol manager.
 
 ### Bluetooth (160W)
 
@@ -256,17 +289,17 @@ own `Store`. Documents: `Authentication` and `AccountCredentials`
 
 All library errors derive from `AnkerPrimeError` (`ankerprime.model`):
 
-| Error | Meaning |
+| Error                        | Meaning                                                         |
 |------------------------------|-----------------------------------------------------------------|
-| `AuthenticationError` | credentials or token rejected; user action needed |
-| `AccountRefusedError` | (subclass) a 160W refused the user identity; set the owner ID |
-| `ChargerConnectionError` | charger or cloud unreachable, link lost |
-| `ChargerTimeoutError` | no answer in time (also a `TimeoutError`) |
-| `ProtocolError` | unexpected data from the charger or the cloud |
-| `InvalidParameterError` | argument outside what the charger accepts (also a `ValueError`) |
-| `UnsupportedCapabilityError` | the charger or this library lacks the feature |
-| `WriteRejectedError` | the charger refused a write (`status`) |
-| `UnknownProductError` | not a supported model |
+| `AuthenticationError`        | credentials or token rejected; user action needed               |
+| `AccountRefusedError`        | (subclass) a 160W refused the user identity; set the owner ID   |
+| `ChargerConnectionError`     | charger or cloud unreachable, link lost                         |
+| `ChargerTimeoutError`        | no answer in time (also a `TimeoutError`)                       |
+| `ProtocolError`              | unexpected data from the charger or the cloud                   |
+| `InvalidParameterError`      | argument outside what the charger accepts (also a `ValueError`) |
+| `UnsupportedCapabilityError` | the charger or this library lacks the feature                   |
+| `WriteRejectedError`         | the charger refused a write (`status`)                          |
+| `UnknownProductError`        | not a supported model                                           |
 
 ## Logging
 

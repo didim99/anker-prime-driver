@@ -2,7 +2,8 @@
 
 Python library and command-line tool to monitor and control Anker Prime
 chargers: per-port voltage, current and power, port switches, countdowns and
-schedules, charging modes, display settings and energy counters.
+schedules, charging modes and custom profiles, display settings and energy
+counters.
 
 > [!NOTE]
 > **Status: alpha.** The 250W cloud connection, energy counters and the

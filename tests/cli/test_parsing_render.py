@@ -15,7 +15,8 @@ from ankerprime.cli.render import (
     render_readings, render_runtime, render_state, render_table)
 from ankerprime.cli.terminal import TerminalBlock
 from ankerprime.cloud.client import BoundDevice
-from ankerprime.model import ChargingMode, OutputId, PortId, ScreenTimeout, Weekday
+from ankerprime.model import (
+    A2345, ChargingMode, OutputId, PortId, ScreenTimeout, Weekday)
 from ankerprime.model.serialize import state_to_dict
 from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import decode_message
@@ -176,3 +177,15 @@ def test_state_to_dict_is_json_ready() -> None:
     assert restored['settings']['display']['screen_timeout'] == '30s'
     assert restored['settings']['clock']['schedule']['end'] == '23:00'
     assert restored['capabilities']['output_switch'] == 'verified'
+    assert restored['settings']['active_profile'] == 1
+    assert restored['settings']['custom_profiles'] is None
+
+
+def test_profiles_in_the_json_state() -> None:
+    assert A2345.custom_mode is not None
+    profile = A2345.custom_mode.template(1, 'Desk')
+    state = snapshot_state().build(available=True, profiles=[profile])
+    document = json.loads(json.dumps(state_to_dict(state)))
+    stored = document['settings']['custom_profiles'][0]
+    assert stored['name'] == 'Desk' and stored['total_watts'] == 250
+    assert stored['ports']['usb_a'] == {'watts': 15, 'protocols': ['ufcs']}

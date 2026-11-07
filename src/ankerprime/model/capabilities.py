@@ -13,6 +13,8 @@ class Capability(StrEnum):
     PORT_PRIORITY = 'port_priority'
     FIXED_ALLOCATION = 'fixed_allocation'
     CUSTOM_CHARGING_MODE = 'custom_charging_mode'
+    CUSTOM_PROFILES = 'custom_profiles'
+    """Custom profiles and the custom mode switch kept in the account."""
     SCREEN_BRIGHTNESS = 'screen_brightness'
     SCREEN_TIMEOUT = 'screen_timeout'
     SCREEN_ORIENTATION = 'screen_orientation'

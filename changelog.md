@@ -7,7 +7,33 @@ Versioning while in development (major version 0): the minor version grows
 with big changes (a new module, subsystem or charger model), the patch version
 with every other change; documentation-only changes keep the version.
 0.7.3 is the first version published on PyPI; earlier numbers were assigned
-to the development history afterward.
+to the development history afterwards.
+
+## [Unreleased]
+
+### Added
+- 250W custom charging mode (experimental):
+  - `ChargingProfile` with per-output limits and fast-charge protocols;
+    `product.custom_mode` (`CustomModeRules`) with the limits, the Anker
+    app's defaults and validation, including mainland China limits;
+  - `Charger.apply_custom_profile()` and `exit_custom_mode()`;
+  - profiles stored in the Anker account: `save_custom_profile()`,
+    `delete_custom_profile()`, `reload_custom_profiles()`, and the account's
+    custom mode setting with `set_custom_mode_enabled()`;
+  - state: `settings.active_profile`, `custom_profiles`,
+    `custom_mode_enabled`; new capability `custom_profiles`.
+- `ChargerAccount` interface for charger settings kept in the account;
+  `CloudAccount` provides one per charger (`mini_power` API).
+- `CloudClient.request()` for JSON requests with a body; `CloudAccount.call()`
+  runs one with the account's re-login.
+- CLI: `custom-mode list|show|add|edit|delete|apply|exit` and `labs`;
+  `status` shows the profile in use and the custom mode setting.
+
+### Changed
+- 250W: max compatibility and device identification exclude each other;
+  switching one on first switches the other off. With an account, both are
+  written to the account first, then to the charger, as the official app
+  does.
 
 ## [0.7.3] - 2026-11-07
 

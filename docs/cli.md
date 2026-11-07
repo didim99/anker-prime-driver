@@ -182,8 +182,8 @@ never).
 ## Control
 
 Every control command reports what it changed. Features not yet confirmed on
-a real charger of that model print a "not yet verified" note after success (see the model table in
-the [readme](../readme.md#supported-chargers)). A
+a real charger of that model print a "not yet verified" note after success
+(see the model table in the [readme](../readme.md#supported-chargers)). A
 feature the charger lacks fails with "capability not supported".
 
 Outputs are `c1`…`c4` and `usb_a` (also `a` or `usb-a`; the 250W's two USB-A
@@ -229,6 +229,61 @@ ankerprime display --brightness 60 --screen-timeout 5min
 ankerprime clock on --theme style_2
 ankerprime clock-schedule 22:00 07:00 --days weekend
 ankerprime switch ufcs on
+```
+
+On the 250W, `switch max-compatibility` and `switch device-identification`
+exclude each other: switching one on first switches the other off. Both are
+also stored in the Anker account, as the official app does.
+
+## Custom charging mode (250W)
+
+Custom mode caps every output at a chosen power and lets each USB-C port allow
+or block single fast-charge protocols. Up to four profiles (numbers 1–4) are
+kept in the Anker account, shared with the Anker app; applying one writes its
+limits to the charger. The Anker app shows custom mode only while the
+account's custom mode setting (the app's Labs page) is on.
+
+### `labs [on|off]`
+
+Shows or switches the account's custom mode setting. Switching it off also
+leaves custom mode.
+
+### `custom-mode [ACTION]`
+
+| Action           | Arguments                        | Meaning                                                                                                       |
+|------------------|----------------------------------|---------------------------------------------------------------------------------------------------------------|
+| `list` (default) |                                  | stored profiles; `*` marks the one in use                                                                     |
+| `show`           | `NUMBER`                         | limits and allowed protocols per port                                                                         |
+| `add`            | `NUMBER NAME [options]`          | store a new profile, starting from the Anker app's defaults (C1 100 W, C2 65 W, C3 45 W, C4 25 W, USB-A 15 W) |
+| `edit`           | `NUMBER [--name NAME] [options]` | change a stored profile; when it is in use, the charger gets the new limits at once                           |
+| `delete`         | `NUMBER`                         | remove a stored profile; leaves custom mode first if it is in use                                             |
+| `apply`          | `NUMBER`                         | switch the charger to custom mode with that profile                                                           |
+| `exit`           |                                  | leave custom mode; the charger returns to its previous mode                                                   |
+
+Options of `add` and `edit`:
+
+| Option                           | Meaning                                                                     |
+|----------------------------------|-----------------------------------------------------------------------------|
+| `--c1 W` … `--c4 W`, `--usb-a W` | limit of an output; 0 switches it off                                       |
+| `--protocols PORT=LIST`          | protocols a port allows, replacing its list (repeatable; `c1=` allows none) |
+| `--auto-exit on\|off`            | leave custom mode once every device is unplugged                            |
+
+Limits: C1 15–140 W, C2–C4 15–100 W (120 W on mainland China accounts),
+USB-A 15 or 24 W, at most 250 W in total. Protocols: `scp`, `ufcs`,
+`pd_12v`, `pps_11v`, `pps_16v`, `pps_21v`; mainland China accounts use
+`huawei` instead of `scp` and add `xiaomi`. A port allows at most three of PD
+12V and the PPS ranges, and on mainland accounts not both PD 12V and Xiaomi.
+Names are trimmed and limited to 20 characters; outside mainland China, SCP is
+dropped from ports capped at 15–20 W, as in the Anker app. Every port drops
+out for a few seconds when a profile is applied.
+
+```bash
+ankerprime labs on
+ankerprime custom-mode add 1 Desk --c1 100 --c2 60 --usb-a 0
+ankerprime custom-mode edit 1 --protocols c1=ufcs,pps_11v,pps_16v
+ankerprime custom-mode show 1
+ankerprime custom-mode apply 1
+ankerprime custom-mode exit
 ```
 
 ## Energy counters

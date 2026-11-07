@@ -1,6 +1,9 @@
 """Product definitions, capabilities and charger state shared by all layers."""
 
 from ankerprime.model.capabilities import Capability, Verification
+from ankerprime.model.custom import (
+    AccountSettings, ChargingProfile, CustomModeRules,
+    CustomPortLimit, CustomPortRule, CustomProtocol)
 from ankerprime.model.enums import (
     CableRating, ChargingMode, ChargingProtocol, ClockTheme,
     ConnectorType, DeviceBrand, DisplayLanguage, FixedAllocation,
@@ -24,6 +27,7 @@ __all__ = [
     'A2687',
     'PRODUCTS',
     'AccountRefusedError',
+    'AccountSettings',
     'AnkerPrimeError',
     'AuthenticationError',
     'CableRating',
@@ -33,12 +37,17 @@ __all__ = [
     'ChargerState',
     'ChargerTimeoutError',
     'ChargingMode',
+    'ChargingProfile',
     'ChargingProtocol',
     'ClockSchedule',
     'ClockSettings',
     'ClockTheme',
     'ConnectorType',
     'Countdown',
+    'CustomModeRules',
+    'CustomPortLimit',
+    'CustomPortRule',
+    'CustomProtocol',
     'DeviceBrand',
     'DeviceInfo',
     'DisplayLanguage',

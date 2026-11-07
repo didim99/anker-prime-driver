@@ -11,12 +11,16 @@ from typing import TypeVar
 from ankerprime.cloud.auth import (
     AccountClient, AccountCredentials, Authentication)
 from ankerprime.cloud.client import BoundDevice, CloudClient, MqttCredentials
+from ankerprime.cloud.mini_power import MiniPowerClient
 from ankerprime.device.a2345 import A2345Device, A2345Timings
 from ankerprime.energy.store import EnergyStore
+from ankerprime.interfaces.account import ChargerAccount
 from ankerprime.interfaces.charger import Charger
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.mqtt import MqttConnector
 from ankerprime.interfaces.storage import DocumentStore
+from ankerprime.model.custom import (
+    AccountSettings, ChargingProfile, CustomModeRules)
 from ankerprime.model.enums import ProductCode
 from ankerprime.model.errors import AuthenticationError, UnknownProductError
 from ankerprime.model.state import DeviceInfo
@@ -118,6 +122,7 @@ class CloudAccount:
         if self._energy_store is not None:
             energy = EnergyStore.for_serial(self._energy_store, device.serial)
         charger = A2345Device(self._session.channel(device), info,
+                              account=_AccountCharger(self, device.serial),
                               energy_store=energy, timings=self._timings,
                               clock=self._clock)
         self._chargers[device.serial] = charger
@@ -132,6 +137,12 @@ class CloudAccount:
 
     async def _mqtt_credentials(self) -> MqttCredentials:
         return await self._call(lambda client: client.mqtt_credentials())
+
+    async def call(self, request: Callable[[CloudClient], Awaitable[ResultT]]
+                   ) -> ResultT:
+        """Run a request with the current token, signing in again once."""
+
+        return await self._call(request)
 
     async def _call(self, request: Callable[[CloudClient],
                                             Awaitable[ResultT]]) -> ResultT:
@@ -190,3 +201,60 @@ class CloudAccount:
                    tls_directory=tls_directory,
                    on_authentication=on_authentication,
                    energy_store=energy_store, timings=timings, clock=clock)
+
+
+class _AccountCharger(ChargerAccount):
+    """Account-side settings of one charger, with the account's re-login."""
+
+    _account: CloudAccount
+    _serial: str
+
+    def __init__(self, account: CloudAccount, serial: str):
+        self._account = account
+        self._serial = serial
+
+    @property
+    def mainland(self) -> bool:
+        country = self._account.authentication.country
+        return country == MiniPowerClient.MAINLAND_COUNTRY
+
+    async def settings(self) -> AccountSettings:
+        return await self._account.call(
+            lambda client: self._client(client).settings())
+
+    async def set_custom_mode_enabled(self, enabled: bool) -> None:
+        await self._account.call(
+            lambda client: self._client(client).set_custom_mode_enabled(
+                enabled))
+
+    async def set_max_compatibility(self, enabled: bool) -> None:
+        await self._account.call(
+            lambda client: self._client(client).set_max_compatibility(
+                enabled))
+
+    async def set_device_identification(self, enabled: bool) -> None:
+        await self._account.call(
+            lambda client: self._client(client).set_device_identification(
+                enabled))
+
+    async def profiles(self) -> list[ChargingProfile]:
+        return await self._account.call(
+            lambda client: self._client(client).profiles())
+
+    async def add_profile(self, profile: ChargingProfile,
+                          rules: CustomModeRules) -> None:
+        await self._account.call(
+            lambda client: self._client(client).add_profile(profile, rules))
+
+    async def update_profile(self, profile: ChargingProfile,
+                             rules: CustomModeRules) -> None:
+        await self._account.call(
+            lambda client: self._client(client).update_profile(profile,
+                                                               rules))
+
+    async def delete_profile(self, profile_id: int) -> None:
+        await self._account.call(
+            lambda client: self._client(client).delete_profile(profile_id))
+
+    def _client(self, client: CloudClient) -> MiniPowerClient:
+        return MiniPowerClient(client, self._serial)

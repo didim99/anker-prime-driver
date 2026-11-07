@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -243,17 +244,26 @@ class CloudClient:
                                endpoint=endpoint, certificate_pem=certificate,
                                private_key_pem=private_key)
 
-    async def _post(self, path: str) -> dict[str, Any]:
+    async def request(self, path: str, body: Mapping[str, Any] | None = None,
+                      headers: Mapping[str, str] | None = None) -> Any:
+        """POST a JSON body to an API path; return the response's ``data``.
+
+        ``data`` may be any JSON value, None when the response has none.
+        """
+
         authentication = self._authentication
         now = self._clock()
         if not authentication.is_valid(now):
             raise AuthenticationError('Anker token expired')
-        headers = base_headers(authentication.country, now)
-        headers['x-auth-token'] = authentication.auth_token
-        headers['gtoken'] = hashlib.md5(
+        request_headers = base_headers(authentication.country, now)
+        request_headers['x-auth-token'] = authentication.auth_token
+        request_headers['gtoken'] = hashlib.md5(
             authentication.user_id.encode('utf-8')).hexdigest()
+        request_headers.update(headers or {})
         url = f'{authentication.server}/{_checked_path(path)}'
-        response = await self._http.post(url, headers, b'{}')
+        payload = json.dumps(dict(body or {}),
+                             separators=(',', ':')).encode('utf-8')
+        response = await self._http.post(url, request_headers, payload)
         if response.status in AUTH_FAILURE_STATUSES:
             raise AuthenticationError('Anker token rejected')
         if not 200 <= response.status < 300:
@@ -265,7 +275,10 @@ class CloudClient:
         if code != 0:
             raise ProtocolError(f'Anker cloud error {code}: '
                                 f'{root.get("msg") or ""}')
-        data = root.get('data')
+        return root.get('data')
+
+    async def _post(self, path: str) -> dict[str, Any]:
+        data = await self.request(path)
         if not isinstance(data, dict):
             raise ProtocolError('response without data')
         return data

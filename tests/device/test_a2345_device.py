@@ -329,7 +329,11 @@ async def test_unsupported_capabilities(device: A2345Device) -> None:
     # The captured firmware reports no UFCS switch.
     with pytest.raises(UnsupportedCapabilityError):
         await device.set_ufcs(True)
-    assert not device.supports(Capability.CUSTOM_CHARGING_MODE)
+    assert device.supports(Capability.CUSTOM_CHARGING_MODE)
+    # Stored profiles need the account.
+    assert not device.supports(Capability.CUSTOM_PROFILES)
+    with pytest.raises(UnsupportedCapabilityError):
+        await device.set_custom_mode_enabled(True)
 
 
 async def test_invalid_arguments(device: A2345Device) -> None:

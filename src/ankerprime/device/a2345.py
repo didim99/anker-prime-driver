@@ -13,6 +13,12 @@ Telemetry carries port readings only: output switches, countdowns and other
 settings changed elsewhere (another client, the app, the knob) are not pushed
 over the cloud. They are picked up by a snapshot read after an acknowledgement
 meant for another client, and by a periodic snapshot read.
+
+With a ``ChargerAccount`` the device also reads the settings and custom
+profiles the account keeps, on every connection and on ``refresh``. Switches
+the account stores (custom mode, max compatibility, device identification)
+are written to the account first, then to the charger, as the official app
+does.
 """
 
 from __future__ import annotations
@@ -26,8 +32,11 @@ from typing import Any
 from ankerprime.device.base import BaseCharger
 from ankerprime.energy.recorder import EnergyRecorder
 from ankerprime.energy.store import EnergyStore
+from ankerprime.interfaces.account import ChargerAccount
 from ankerprime.interfaces.channel import Channel, ChannelListener
 from ankerprime.model.capabilities import Capability
+from ankerprime.model.custom import (
+    AccountSettings, ChargingProfile, CustomModeRules)
 from ankerprime.model.enums import (
     ChargingMode, ClockTheme, HourFormat, KnobDirection,
     OutputId, PortId, ScheduleSlot, ScreenTimeout)
@@ -46,7 +55,8 @@ from ankerprime.protocol.a2345.frame import decode_frame
 from ankerprime.protocol.a2345.messages import (
     RealtimeTelemetry, StatusSnapshot, decode_message)
 from ankerprime.protocol.a2345.settings import (
-    ChargingModeUpdate, ClockState, ClockUpdate, CountdownUpdate,
+    CUSTOM_CHARGING_MODE_CODE, Capabilities, ChargingModeUpdate,
+    ClockState, ClockUpdate, CountdownUpdate, CustomProfile,
     FirmwareVersionUpdate, OutputSwitchUpdate, PortSchedule,
     PriorityUpdate, ScheduleUpdate, SettingField, SettingsChange,
     SettingsUpdate, ValueUpdate, WriteAcknowledgement)
@@ -76,6 +86,7 @@ class A2345Timings:
     _tick: float
     _write_waits: tuple[float, ...]
     _priority_waits: tuple[float, ...]
+    _custom_waits: tuple[float, ...]
 
     def __init__(self, *, realtime_refresh: float = 8.0,
                  stale_after: float = 15.0, telemetry_deadline: float = 45.0,
@@ -85,7 +96,8 @@ class A2345Timings:
                  retry_initial: float = 1.0, retry_max: float = 60.0,
                  energy_save: float = 60.0, tick: float = 1.0,
                  write_waits: Sequence[float] = (1.5, 3.0),
-                 priority_waits: Sequence[float] = (4.0,)):
+                 priority_waits: Sequence[float] = (4.0,),
+                 custom_waits: Sequence[float] = (3.0, 4.0)):
         self._realtime_refresh = realtime_refresh
         self._stale_after = stale_after
         self._telemetry_deadline = telemetry_deadline
@@ -98,6 +110,7 @@ class A2345Timings:
         self._tick = tick
         self._write_waits = tuple(write_waits)
         self._priority_waits = tuple(priority_waits)
+        self._custom_waits = tuple(custom_waits)
 
     @property
     def realtime_refresh(self) -> float:
@@ -163,6 +176,12 @@ class A2345Timings:
 
         return self._priority_waits
 
+    @property
+    def custom_waits(self) -> tuple[float, ...]:
+        """A custom profile re-negotiates every port; the charger answers late."""
+
+        return self._custom_waits
+
     def retry_delay(self, failures: int) -> float:
         """Exponential delay before reconnect attempt ``failures``."""
 
@@ -195,6 +214,7 @@ class A2345Device(BaseCharger, ChannelListener):
 
     _channel: Channel
     _info: DeviceInfo
+    _account: ChargerAccount | None
     _timings: A2345Timings
     _clock: Clock
 
@@ -222,13 +242,19 @@ class A2345Device(BaseCharger, ChannelListener):
     _pending: list[_PendingWrite]
     _write_locks: dict[WriteKey, asyncio.Lock]
 
+    _account_settings: AccountSettings | None
+    _profiles: tuple[ChargingProfile, ...] | None
+    _account_lock: asyncio.Lock
+
     def __init__(self, channel: Channel, info: DeviceInfo | None = None, *,
+                 account: ChargerAccount | None = None,
                  energy_store: EnergyStore | None = None,
                  timings: A2345Timings | None = None,
                  clock: Clock | None = None):
         super().__init__(A2345)
         self._channel = channel
         self._info = info or DeviceInfo()
+        self._account = account
         self._timings = timings or A2345Timings()
         self._clock = clock or utc_now
         self._tracker = StateTracker(A2345)
@@ -253,6 +279,9 @@ class A2345Device(BaseCharger, ChannelListener):
         self._settings_fresh = False
         self._pending = []
         self._write_locks = {}
+        self._account_settings = None
+        self._profiles = None
+        self._account_lock = asyncio.Lock()
         self._publish_state()
 
     @property
@@ -333,6 +362,8 @@ class A2345Device(BaseCharger, ChannelListener):
         if not self._channel.is_open:
             raise ChargerConnectionError('charger is not connected')
         await self._request_settings()
+        if self._account is not None:
+            self._spawn(self._load_account())
 
     async def _set_output(self, output: OutputId, on: bool) -> None:
         await self._write(commands.set_output(output, on),
@@ -424,17 +455,161 @@ class A2345Device(BaseCharger, ChannelListener):
         await self._write(commands.set_holiday_theme(enabled))
 
     async def _set_max_compatibility(self, enabled: bool) -> None:
-        update = ValueUpdate(SettingField.MAX_COMPATIBILITY, int(enabled))
-        await self._write(commands.set_max_compatibility(enabled), [update])
+        # Max compatibility and device identification exclude each other.
+        if enabled and self._switched_on(SettingField.DEVICE_IDENTIFICATION):
+            await self._store_identification(False)
+        await self._store_compatibility(enabled)
 
     async def _set_device_identification(self, enabled: bool) -> None:
-        update = ValueUpdate(SettingField.DEVICE_IDENTIFICATION, int(enabled))
-        await self._write(commands.set_device_identification(enabled),
-                          [update])
+        if enabled and self._switched_on(SettingField.MAX_COMPATIBILITY):
+            await self._store_compatibility(False)
+        await self._store_identification(enabled)
 
     async def _set_ufcs(self, enabled: bool) -> None:
         update = ValueUpdate(SettingField.UFCS, int(enabled))
         await self._write(commands.set_ufcs(enabled), [update])
+
+    async def _apply_custom_profile(self, profile: ChargingProfile) -> None:
+        mainland = self._mainland
+        self._rules.validate(profile, mainland)
+        settings = self._tracker.settings
+        with_protocols = (profile.protocols_enabled and settings is not None
+                          and settings.supports(Capabilities.PORT_PROTOCOLS)
+                          and not settings.supports(
+                              Capabilities.PROTOCOL_MANAGEMENT))
+        command = commands.apply_custom_profile(profile, mainland=mainland,
+                                                with_protocols=with_protocols)
+        reported = CustomProfile(profile.number, profile.auto_exit,
+                                 command.fields[0xA3][2:])
+        update = ChargingModeUpdate(CUSTOM_CHARGING_MODE_CODE, reported)
+        await self._write(command, [update],
+                          waits=self._timings.custom_waits)
+
+    async def _exit_custom_mode(self) -> None:
+        await self._write(commands.exit_custom_charging_mode())
+
+    async def _set_custom_mode_enabled(self, enabled: bool) -> None:
+        account = self._require_account()
+        await account.set_custom_mode_enabled(enabled)
+        self._update_account(custom_mode_enabled=enabled)
+        settings = self._tracker.settings
+        if not enabled and settings is not None and (
+                settings.custom_charging_mode):
+            await self._exit_custom_mode()
+
+    async def _save_custom_profile(self, profile: ChargingProfile) -> None:
+        account = self._require_account()
+        mainland = account.mainland
+        rules = self._rules
+        profile = rules.normalize(profile, mainland)
+        rules.validate(profile, mainland)
+        stored = await self._stored_profile(profile.number)
+        if stored is None:
+            await account.add_profile(profile, rules)
+        else:
+            profile = profile.replace(profile_id=stored.profile_id)
+            await account.update_profile(profile, rules)
+        await self._reload_custom_profiles()
+        if self._active_profile() == profile.number:
+            await self._apply_custom_profile(profile)
+
+    async def _delete_custom_profile(self, number: int) -> None:
+        account = self._require_account()
+        stored = await self._stored_profile(number)
+        if stored is None or stored.profile_id is None:
+            raise InvalidParameterError(f'no stored custom profile {number}')
+        if self._active_profile() == number:
+            # Only removed from the account once the charger has left it.
+            await self._exit_custom_mode()
+        await account.delete_profile(stored.profile_id)
+        await self._reload_custom_profiles()
+
+    async def _reload_custom_profiles(self) -> None:
+        account = self._require_account()
+        async with self._account_lock:
+            settings = await account.settings()
+            profiles = await account.profiles()
+        self._account_settings = settings
+        self._profiles = tuple(profiles)
+        self._publish_state()
+
+    @property
+    def _rules(self) -> CustomModeRules:
+        rules = self._product.custom_mode
+        if rules is None:
+            raise UnsupportedCapabilityError(Capability.CUSTOM_CHARGING_MODE)
+        return rules
+
+    @property
+    def _mainland(self) -> bool:
+        return self._account is not None and self._account.mainland
+
+    def _require_account(self) -> ChargerAccount:
+        if self._account is None:
+            raise UnsupportedCapabilityError(Capability.CUSTOM_PROFILES)
+        return self._account
+
+    def _active_profile(self) -> int | None:
+        settings = self._tracker.settings
+        if settings is None or not settings.custom_charging_mode:
+            return None
+        profile = settings.custom_profile
+        return profile.number if profile is not None else None
+
+    async def _stored_profile(self, number: int) -> ChargingProfile | None:
+        if self._profiles is None:
+            await self._reload_custom_profiles()
+        for profile in self._profiles or ():
+            if profile.number == number:
+                return profile
+        return None
+
+    async def _load_account(self) -> None:
+        """Read the account's values; a failure leaves the previous ones."""
+
+        try:
+            await self._reload_custom_profiles()
+        except AnkerPrimeError as error:
+            logger.debug('account settings of %s not read: %s',
+                         redact(self._info.serial), error)
+
+    def _update_account(self, **changes: bool) -> None:
+        current = self._account_settings or AccountSettings()
+        self._account_settings = current.replace(**changes)
+        self._publish_state()
+
+    def _switched_on(self, field: SettingField) -> bool:
+        """Account value first, then what the charger reports."""
+
+        account = self._account_settings
+        settings = self._tracker.settings
+        stored = reported = None
+        if field == SettingField.MAX_COMPATIBILITY:
+            if account is not None:
+                stored = account.max_compatibility
+            if settings is not None:
+                reported = settings.max_compatibility
+        else:
+            if account is not None:
+                stored = account.device_identification
+            if settings is not None:
+                reported = settings.device_identification
+        return bool(stored if stored is not None else reported)
+
+    async def _store_compatibility(self, enabled: bool) -> None:
+        if self._account is not None:
+            await self._account.set_max_compatibility(enabled)
+            self._update_account(max_compatibility=enabled)
+        update = ValueUpdate(SettingField.MAX_COMPATIBILITY, int(enabled))
+        await self._write(commands.set_max_compatibility(enabled), [update])
+
+    async def _store_identification(self, enabled: bool) -> None:
+        if self._account is not None:
+            await self._account.set_device_identification(enabled)
+            self._update_account(device_identification=enabled)
+        update = ValueUpdate(SettingField.DEVICE_IDENTIFICATION, int(enabled))
+        await self._write(commands.set_device_identification(enabled),
+                          [update])
 
     async def _open_link(self) -> None:
         """Open the channel and send the initial requests."""
@@ -455,6 +630,8 @@ class A2345Device(BaseCharger, ChannelListener):
         self._last_trigger = now
         self._maintenance = asyncio.create_task(
             self._maintain(self._link_lost), name='ankerprime-a2345-maintenance')
+        if self._account is not None:
+            self._spawn(self._load_account())
 
     async def _supervise(self) -> None:
         """Reopen the link after every loss, with growing delays."""
@@ -665,9 +842,15 @@ class A2345Device(BaseCharger, ChannelListener):
                      redact(self._info.serial), exc_info=error)
 
     def _publish_state(self) -> None:
+        unavailable: tuple[Capability, ...] = ()
+        if self._account is None:
+            unavailable = (Capability.CUSTOM_PROFILES,)
         state = self._tracker.build(info=self._info,
                                     available=self._available,
-                                    energy=self._energy.counters)
+                                    energy=self._energy.counters,
+                                    account=self._account_settings,
+                                    profiles=self._profiles,
+                                    unavailable=unavailable)
         self._publish(state)
 
 
