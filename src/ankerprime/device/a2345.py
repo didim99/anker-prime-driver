@@ -207,6 +207,7 @@ class A2345Device(BaseCharger, ChannelListener):
     _maintenance: asyncio.Task[None] | None
     _readback: asyncio.Task[None] | None
     _tasks: set[asyncio.Task[Any]]
+    _saver: asyncio.Task[None] | None
 
     _link_lost: asyncio.Event
     _stopping: bool
@@ -240,6 +241,7 @@ class A2345Device(BaseCharger, ChannelListener):
         self._maintenance = None
         self._readback = None
         self._tasks = set()
+        self._saver = None
         self._link_lost = asyncio.Event()
         self._stopping = False
         self._failures = 0
@@ -310,6 +312,7 @@ class A2345Device(BaseCharger, ChannelListener):
         self._supervisor = None
         self._maintenance = None
         self._readback = None
+        self._saver = None
         self._tasks.clear()
         await self._channel.close()
         self._energy.interrupt()
@@ -514,8 +517,9 @@ class A2345Device(BaseCharger, ChannelListener):
                 self._publish_state()
             if self._settings_due(now):
                 self._spawn(self._request_settings())
-            if self._energy.save_due(now):
-                self._spawn(self._save_energy())
+            if self._energy.save_due(now) and (self._saver is None
+                                               or self._saver.done()):
+                self._saver = self._spawn(self._save_energy())
             if now - self._last_trigger >= timings.realtime_refresh:
                 self._last_trigger = now
                 try:
@@ -640,23 +644,31 @@ class A2345Device(BaseCharger, ChannelListener):
         if not self._channel.is_open or not self._settings_fresh:
             raise ChargerConnectionError('charger is not ready for writes')
 
-    def _spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
-        task = asyncio.create_task(_quietly(coroutine))
+    def _spawn(self, coroutine: Coroutine[Any, Any, None]
+               ) -> asyncio.Task[None]:
+        # The coroutine runs as the task itself: a task cancelled before its
+        # first step then closes it cleanly, where a wrapper would leave it
+        # never awaited.
+        task = asyncio.create_task(coroutine)
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(self._finished)
+        return task
+
+    def _finished(self, task: asyncio.Task[None]) -> None:
+        self._tasks.discard(task)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is None or isinstance(error, ChargerConnectionError):
+            return
+        logger.error('unexpected error in a task of %s',
+                     redact(self._info.serial), exc_info=error)
 
     def _publish_state(self) -> None:
         state = self._tracker.build(info=self._info,
                                     available=self._available,
                                     energy=self._energy.counters)
         self._publish(state)
-
-
-async def _quietly(coroutine: Coroutine[Any, Any, None]) -> None:
-    try:
-        await coroutine
-    except ChargerConnectionError:
-        pass
 
 
 def _monotonic() -> float:

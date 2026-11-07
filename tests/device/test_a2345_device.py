@@ -1,6 +1,7 @@
 """A2345 device logic tests over a fake channel."""
 
 import asyncio
+import gc
 from collections.abc import AsyncIterator
 
 import pytest
@@ -148,6 +149,28 @@ async def test_first_connect_failure_is_raised(
     with pytest.raises(ChargerConnectionError):
         await device.connect()
     await connected(device)
+
+
+async def test_task_cancelled_before_start_leaves_nothing_unawaited(
+        device: A2345Device, caplog: pytest.LogCaptureFixture) -> None:
+    await connected(device)
+    started: list[bool] = []
+
+    async def background() -> None:
+        started.append(True)
+
+    async def failing() -> None:
+        raise RuntimeError('boom')
+
+    device._spawn(background())
+    await device.disconnect()
+    gc.collect()
+    assert started == []
+    await connected(device)
+    device._spawn(failing())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert 'unexpected error in a task' in caplog.text
 
 
 async def test_disconnect_closes_and_stops(device: A2345Device,
