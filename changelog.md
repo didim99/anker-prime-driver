@@ -9,6 +9,14 @@ with every other change; documentation-only changes keep the version.
 0.7.3 is the first version published on PyPI; earlier numbers were assigned
 to the development history afterwards.
 
+## [Unreleased]
+
+### Fixed
+- 250W time over own pictures: switching it failed with "charger did not
+  acknowledge the write" when the charger sent no theme status of its own
+  (seen through Home Assistant). The theme status is now requested after
+  each attempt, and the write is confirmed by it.
+
 ## [0.8.0] - 2026-11-08
 
 The remaining features of Charker: custom charging on both models, clock

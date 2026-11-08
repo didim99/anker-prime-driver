@@ -23,6 +23,7 @@ from tests.utils import wait_until
 
 CLOCK_THEME = 0x0205
 IMAGE_TIME_DISPLAY = 0x0222
+THEME_STATUS_REQUEST = 0x0202
 FOREST = ClockPicture(31, 'https://cdn/forest.jpg', 0x1A2B3C4D,
                       title='Forest', text_color=0xFF00FF00)
 SEA = ClockPicture(32, 'https://cdn/sea.jpg', 0xBEEF, title='Sea')
@@ -240,6 +241,32 @@ async def test_picture_time(device: A2345Device,
     channel.clear()
     await device.set_picture_time(False)
     assert channel.sent[0].message_type == IMAGE_TIME_DISPLAY
+    clock = device.state.settings.clock
+    assert clock is not None and clock.picture_time is False
+
+
+async def test_picture_time_confirmed_by_a_requested_status(
+        device: A2345Device, channel: FakeChannel) -> None:
+    """A charger silent on the write still answers the theme status read."""
+
+    await connected(device)
+    shown = [True]
+
+    def respond(request: Frame) -> list[bytes]:
+        if request.message_type == IMAGE_TIME_DISPLAY:
+            enabled = request.field(0xA2)
+            assert enabled is not None
+            shown[0] = bool(enabled.raw[-1])
+            return []
+        if request.message_type == THEME_STATUS_REQUEST:
+            return [theme_status(shown[0])]
+        return charger_responder()(request)
+
+    channel.set_responder(respond)
+    channel.clear()
+    await device.set_picture_time(False)
+    assert [frame.message_type for frame in channel.sent[:2]] == [
+        IMAGE_TIME_DISPLAY, THEME_STATUS_REQUEST]
     clock = device.state.settings.clock
     assert clock is not None and clock.picture_time is False
 

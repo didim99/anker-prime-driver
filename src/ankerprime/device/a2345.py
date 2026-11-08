@@ -75,7 +75,6 @@ logger = logging.getLogger(__name__)
 WriteKey = tuple[int, OutputId | None, ScheduleSlot | None]
 
 
-
 @dataclass(init=False)
 class A2345Timings:
     """Timing rules, in seconds; the defaults follow the official app."""
@@ -207,6 +206,7 @@ class A2345Timings:
         """A copy with the given timings changed."""
 
         return copy_with(self, changes)
+
 
 class _PendingWrite:
     """A write waiting for its acknowledgement.
@@ -685,6 +685,9 @@ class A2345Device(RunningCharger, ChannelListener):
                          ) -> WriteAcknowledgement | None:
         for wait in waits:
             await self._send(pending.command)
+            if pending.command.theme_answered:
+                # The charger does not always send the theme status itself.
+                await self._send(commands.theme_status())
             try:
                 return await asyncio.wait_for(asyncio.shield(pending.future),
                                               wait)
@@ -764,4 +767,3 @@ class A2345Device(RunningCharger, ChannelListener):
                                     profiles=self._features.profiles,
                                     unavailable=unavailable)
         self._publish(state)
-

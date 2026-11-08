@@ -56,6 +56,9 @@ async def charger(request: pytest.FixtureRequest
             charger = account.charger(device)
             await charger.connect()
             await wait_for_state(charger, is_ready, READY_TIMEOUT)
+            # Ready means the snapshot; the theme status (time over own
+            # pictures) may still be on its way. A test run alone needs it.
+            await settled(charger)
             yield charger
         finally:
             await account.close()

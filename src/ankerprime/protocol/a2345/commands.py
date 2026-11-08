@@ -98,6 +98,12 @@ class Command:
         return self._message_type not in self.READ_TYPES
 
     @property
+    def theme_answered(self) -> bool:
+        """Whether a theme status, not an ack, confirms this write."""
+
+        return self._message_type in self.THEME_ANSWERED_TYPES
+
+    @property
     def ack_type(self) -> int | None:
         """Type of the ``0x0ANN`` answer; None when a data message answers."""
 
