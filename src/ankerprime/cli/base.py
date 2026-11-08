@@ -22,6 +22,7 @@ from ankerprime.interfaces.channel import Channel
 from ankerprime.interfaces.charger import Charger
 from ankerprime.interfaces.http import HttpClient
 from ankerprime.interfaces.mqtt import MqttConnector
+from ankerprime.model.capabilities import Capability
 from ankerprime.model.errors import (
     AnkerPrimeError, AuthenticationError,
     ChargerTimeoutError, InvalidParameterError)
@@ -41,6 +42,9 @@ BleScanner = Callable[[float], Awaitable[list['DiscoveredCharger']]]
 
 DEFAULT_TIMEOUT = 30.0
 ERROR_POLL = 0.25
+# The theme status (time over own pictures) follows the snapshot within a
+# second; a charger that leaves the value out is not waited for longer.
+THEME_WAIT = 3.0
 DEFAULT_COUNTRY = 'US'
 BLE_EXTRA_HINT = ('Bluetooth needs the "ble" extra: '
                   'pip install "anker-prime-driver[ble]"')
@@ -188,7 +192,7 @@ class CliContext:
             device = select_device(devices, serial)
             charger = account.charger(device)
             await charger.connect()
-            await wait_for_state(charger, is_ready, timeout)
+            await wait_until_ready(charger, timeout)
             yield charger
 
     @asynccontextmanager
@@ -222,7 +226,7 @@ class CliContext:
                               transport=transport)
         try:
             await charger.connect()
-            await wait_for_state(charger, is_ready, timeout)
+            await wait_until_ready(charger, timeout)
             yield charger
         finally:
             await charger.disconnect()
@@ -471,9 +475,32 @@ def select_device(devices: list[BoundDevice],
 
 
 def is_ready(state: ChargerState) -> bool:
-    """Telemetry is live and the full state has arrived."""
+    """Telemetry is live and the snapshot has arrived."""
 
     return state.available and bool(state.outputs)
+
+
+def has_picture_time(state: ChargerState) -> bool:
+    """The 250W's theme status has arrived with the time over pictures."""
+
+    clock = state.settings.clock
+    return clock is not None and clock.picture_time is not None
+
+
+async def wait_until_ready(charger: Charger, timeout: float
+                           ) -> ChargerState:
+    """Wait for the full state, the 250W's theme status included.
+
+    The theme status is waited for at most ``THEME_WAIT`` seconds.
+    """
+
+    state = await wait_for_state(charger, is_ready, timeout)
+    if (charger.supports(Capability.OWN_CLOCK_PICTURES)
+            and not has_picture_time(state)):
+        with contextlib.suppress(ChargerTimeoutError):
+            state = await wait_for_state(charger, has_picture_time,
+                                         THEME_WAIT)
+    return state
 
 
 async def wait_for_state(charger: Charger, predicate: StatePredicate,

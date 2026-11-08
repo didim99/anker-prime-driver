@@ -67,8 +67,12 @@ def charger_responder(status: int = 0,
                       realtime_frames: int = 1) -> Responder:
     """Answers reads with captured frames and writes with acks.
 
-    A realtime trigger is answered with ``realtime_frames`` telemetry frames.
+    A realtime trigger is answered with ``realtime_frames`` telemetry frames;
+    a theme status read with the captured status and the time over own
+    pictures last written (on at first).
     """
+
+    picture_time = [True]
 
     def respond(request: Frame) -> list[bytes]:
         if request.message_type == 0x0200:
@@ -76,12 +80,13 @@ def charger_responder(status: int = 0,
         if request.message_type == 0x020B:
             return [REALTIME_OLD_FIRMWARE] * realtime_frames
         if request.message_type == 0x0202:
-            return []
+            return [theme_status(picture_time[0])]
         if request.message_type == IMAGE_TIME_DISPLAY:
             # Answered with a theme status, not an ack (seen on hardware).
             enabled = request.field(0xA2)
             assert enabled is not None
-            return [theme_status(bool(enabled.raw[-1]))]
+            picture_time[0] = bool(enabled.raw[-1])
+            return [theme_status(picture_time[0])]
         return [ack_for(request, status)]
 
     return respond

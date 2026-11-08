@@ -1,15 +1,23 @@
 """CLI commands end to end, with a fake Anker cloud and MQTT broker."""
 
+import asyncio
 import json
 import re
 import stat
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from ankerprime.cli.base import wait_until_ready
 from ankerprime.cli.config import CONFIG_DIR_VARIABLE, default_config_dir
 from ankerprime.cli.main import EXIT_AUTHENTICATION, EXIT_ERROR
-from ankerprime.model import A2345, Capability, Verification
+from ankerprime.interfaces.charger import Charger
+from ankerprime.model import (
+    A2345, Capability, ChargerSettings, ChargerState,
+    ClockSettings, OutputId, OutputState, Verification)
+from ankerprime.protocol.a2345.frame import Frame
 from tests.cli.harness import Cli
 from tests.cloud.fakes import DEVICES, FakeAnkerCloud
 from tests.device.charger import charger_responder
@@ -88,6 +96,92 @@ def test_status_text_and_json(cli: Cli) -> None:
     document = json.loads(out)
     assert document['info']['serial'] == 'SERIAL123'
     assert document['available'] is True
+
+
+def test_status_waits_for_the_theme_status(cli: Cli) -> None:
+    """The time over own pictures only comes with the theme status."""
+
+    cli.login()
+    code, out = cli.run('status')
+    assert code == 0 and 'time over own pictures on' in out
+    code, out = cli.run('status', '--json')
+    assert json.loads(out)['settings']['clock']['picture_time'] is True
+
+
+def test_status_without_a_theme_status(tmp_path: Path, password: None,
+                                       monkeypatch: pytest.MonkeyPatch
+                                       ) -> None:
+    """A charger leaving the theme status out delays status only briefly."""
+
+    monkeypatch.setattr('ankerprime.cli.base.THEME_WAIT', 0.2)
+    answer = charger_responder()
+
+    def respond(request: Frame) -> list[bytes]:
+        return [] if request.message_type == 0x0202 else answer(request)
+
+    connector = FakeMqttConnector(charger_over_mqtt(respond))
+    cli = Cli(tmp_path / 'config', FakeAnkerCloud(), connector)
+    cli.login()
+    code, out = cli.run('status')
+    assert code == 0 and 'Desk charger (A2345)' in out
+    assert 'time over own pictures' not in out
+
+
+class StubCharger:
+    """Just enough of a charger for the ready wait."""
+
+    _state: ChargerState
+    _listeners: list[Callable[[ChargerState], None]]
+
+    def __init__(self, state: ChargerState):
+        self._state = state
+        self._listeners = []
+
+    @property
+    def state(self) -> ChargerState:
+        return self._state
+
+    @property
+    def last_error(self) -> None:
+        return None
+
+    def supports(self, capability: Capability) -> bool:
+        return capability == Capability.OWN_CLOCK_PICTURES
+
+    def subscribe(self, listener: Callable[[ChargerState], None]
+                  ) -> Callable[[], None]:
+        self._listeners.append(listener)
+        return lambda: self._listeners.remove(listener)
+
+    def push(self, state: ChargerState) -> None:
+        self._state = state
+        for listener in list(self._listeners):
+            listener(state)
+
+
+def clock_state(picture_time: bool | None) -> ChargerState:
+    clock = ClockSettings(True, picture_time=picture_time)
+    return ChargerState(A2345, available=True,
+                        outputs={OutputId.C1: OutputState(OutputId.C1,
+                                                          is_on=True)},
+                        settings=ChargerSettings(clock=clock))
+
+
+async def test_ready_waits_for_a_late_theme_status() -> None:
+    stub = StubCharger(clock_state(None))
+    asyncio.get_running_loop().call_later(0.05, stub.push, clock_state(False))
+    state = await wait_until_ready(cast(Charger, stub), 1.0)
+    assert state.settings.clock is not None
+    assert state.settings.clock.picture_time is False
+
+
+async def test_ready_gives_up_on_a_missing_theme_status(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr('ankerprime.cli.base.THEME_WAIT', 0.05)
+    state = await wait_until_ready(cast(Charger, StubCharger(
+        clock_state(None))), 1.0)
+    assert state.settings.clock is not None
+    assert state.settings.clock.picture_time is None
 
 
 def test_monitor_prints_requested_count(tmp_path: Path,

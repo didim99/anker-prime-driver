@@ -9,13 +9,17 @@ with every other change; documentation-only changes keep the version.
 0.7.3 is the first version published on PyPI; earlier numbers were assigned
 to the development history afterwards.
 
-## [Unreleased]
+## [0.8.1] - 2026-11-08
 
 ### Fixed
 - 250W time over own pictures: switching it failed with "charger did not
   acknowledge the write" when the charger sent no theme status of its own
   (seen through Home Assistant). The theme status is now requested after
   each attempt, and the write is confirmed by it.
+- CLI: charger commands (`status` among them) waited only for the 250W's
+  status snapshot, so the time over own pictures, which only the theme
+  status carries, was missing from `status`. They now also wait for the
+  theme status, at most 3 s.
 
 ## [0.8.0] - 2026-11-08
 
